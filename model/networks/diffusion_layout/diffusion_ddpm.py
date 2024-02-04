@@ -380,8 +380,6 @@ class GaussianDiffusion:
                 loss_bbox = ((target[:, 0:self.bbox_dim] - denoise_out[:, 0:self.bbox_dim])**2).mean(dim=list(range(1, len(data_start.shape))))
                 losses = ((target - denoise_out)**2).mean(dim=list(range(1, len(data_start.shape))))
                     
-
-                # TODO amend the iou loss
                 if self.loss_iou:
                     # get x_recon & valid mask
                     if self.model_mean_type == 'eps':
@@ -402,17 +400,14 @@ class GaussianDiffusion:
                     else:
                         raise NotImplementedError
 
-                    # TODO only calculate bbox iou in the same scene.
                     # get the iou loss weight w.r.t time
                     w_iou = self._extract(self.alphas_cumprod.to(data_start.device), t, bbox_iou.shape)
-
                     # only consider bboxes in the same scenes
                     assert scene_ids is not None
                     scene_ids = torch.tensor(scene_ids, dtype=torch.int64, device=data_start.device)
                     scene_mask = scene_ids[:, None] == scene_ids
                     diag_mask = torch.eye(scene_mask.size(0), dtype=torch.bool, device=scene_mask.device)
                     scene_mask[diag_mask] = False # remove the diagomal values
-
                     iou_indices = torch.where(scene_mask)
                     w_iou_selected = w_iou[iou_indices[0]].reshape(-1)
                     bbox_iou_valid = bbox_iou[iou_indices] + 1e-6 # meaningful bbox_iou in the same scene.

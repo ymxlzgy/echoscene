@@ -9,12 +9,13 @@ import glob
 
 import trimesh
 from termcolor import colored
-from model.CS_plus_plus import Sg2ScDiffModel as CS_pp
+from model.CS_plus_plus import Sg2ScDiffModel
+from model.CS_plus_plus_box import Sg2BoxDiffModel
 
 
 class SGDiff(nn.Module):
 
-    def __init__(self, type='cs++', diff_opt = '../config/v2_full.yaml', vocab=None, replace_latent=False, with_changes=True, distribution_before=True,
+    def __init__(self, type='cs++', diff_opt = '../config/v2_full.yaml', vocab=None, replace_latent=False, with_changes=True,
                  residual=False, gconv_pooling='avg', with_angles=False, clip=True, separated=False):
         super().__init__()
         assert type in ['cs++', 'cs++_l'], '{} is not included'.format(type)
@@ -23,15 +24,19 @@ class SGDiff(nn.Module):
         self.vocab = vocab
         self.with_angles = with_angles
         self.epoch = 0
-
+        self.diff_opt = diff_opt
+        assert replace_latent is not None and with_changes is not None
         if self.type_ == 'cs++':
-            self.diff_opt = diff_opt
-            assert distribution_before is not None and replace_latent is not None and with_changes is not None
-            self.diff = CS_pp(vocab, self.diff_opt, diffusion_bs=16, embedding_dim=64, mlp_normalization="batch", separated=separated,
-                              gconv_num_layers=5, use_angles=with_angles, distribution_before=distribution_before, replace_latent=replace_latent, residual=residual, use_clip=clip)
-            self.diff.optimizer_ini()
+            self.diff = Sg2ScDiffModel(vocab, self.diff_opt, diffusion_bs=16, embedding_dim=64, mlp_normalization="batch", separated=separated,
+                              gconv_num_layers=5, use_angles=with_angles, replace_latent=replace_latent, residual=residual, use_clip=clip)
+        elif self.type_ == 'cs++_l':
+            self.diff = Sg2BoxDiffModel(vocab, self.diff_opt, diffusion_bs=16, embedding_dim=64, mlp_normalization="batch",
+                              separated=separated,
+                              gconv_num_layers=5, use_angles=with_angles,
+                              replace_latent=replace_latent, residual=residual, use_clip=clip)
         else:
             raise NotImplementedError
+        self.diff.optimizer_ini()
         self.counter = 0
 
     def forward_mani(self, enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat, dec_objs, dec_objs_grained,
@@ -43,17 +48,23 @@ class SGDiff(nn.Module):
                 enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat, dec_objs, dec_objs_grained, dec_triples, dec_boxes,
                 encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, missing_nodes,
                 manipulated_nodes, dec_sdfs, dec_angles)
+        elif self.type_ == 'cs++_l':
+            obj_selected, shape_loss, layout_loss, loss_dict = self.diff.forward(
+                enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat, dec_objs, dec_objs_grained,
+                dec_triples, dec_boxes,
+                encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, missing_nodes,
+                manipulated_nodes, dec_angles)
         else:
             raise NotImplementedError
 
         return obj_selected, shape_loss, layout_loss, loss_dict
 
     def load_networks(self, exp, epoch, strict=True, restart_optim=False):
+        from omegaconf import OmegaConf
+        diff_cfg = OmegaConf.load(self.diff_opt)
+        ckpt = torch.load(os.path.join(exp, 'checkpoint', 'model{}.pth'.format(epoch)))
+        diff_state_dict = {}
         if self.type_ == 'cs++':
-            from omegaconf import OmegaConf
-            diff_cfg = OmegaConf.load(self.diff_opt)
-            ckpt = torch.load(os.path.join(exp, 'checkpoint', 'model{}.pth'.format(epoch)))
-            diff_state_dict = {}
             diff_state_dict['vqvae'] = ckpt.pop('vqvae')
             diff_state_dict['shape_df'] = ckpt.pop('shape_df')
             diff_state_dict['opt'] = ckpt.pop('opt')
@@ -170,7 +181,7 @@ class SGDiff(nn.Module):
 
     def save(self, exp, outf, epoch, counter=None):
         if self.type_ == 'cs++_l':
-            torch.save(self.vae_box.state_dict(), os.path.join(exp, outf, 'model_box_{}.pth'.format(epoch)))
+            torch.save(self.diff.state_dict(epoch, counter), os.path.join(exp, outf, 'model{}.pth'.format(epoch)))
         elif self.type_ == 'cs++':
             torch.save(self.diff.state_dict(epoch, counter), os.path.join(exp, outf, 'model{}.pth'.format(epoch)))
         else:

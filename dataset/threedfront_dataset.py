@@ -377,7 +377,8 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 bins = np.linspace(np.deg2rad(-180), np.deg2rad(180), 24)
                 angle = np.digitize(bbox[6], bins) if self.bin_angle else bbox[6]
                 bbox = normalize_box_params(bbox,file=self.box_normalized_stats)
-                bbox[6] = angle
+                if self.bin_angle:
+                    bbox[6] = angle
 
                 tight_boxes.append(bbox)
             if self.use_SDF:

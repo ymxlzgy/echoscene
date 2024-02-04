@@ -1,0 +1,45 @@
+hyper:
+    batch_size: 32
+    gpu_ids: 0
+    name: ./
+    isTrain: True
+    device: 'cuda'
+    distributed: 0
+dataset:
+    res: 64
+    trunc_thres: 0.2
+    ratio: 1
+
+layout_branch:
+    model: diffusion_scene_layout_ddpm
+    denoiser: unet1d
+    denoiser_kwargs:
+        dim: 512
+        dim_mults: [ 1, 1, 1, 1 ]
+        channels: 65
+        class_dim: 25
+        angle_dim: 1
+        relation_condition: true
+        conditioning_key: crossattn
+        crossattn_dim: 1280
+        concat_dim: 0
+        bbox_separate: true
+
+    diffusion_kwargs:
+      schedule_type: 'linear'
+      beta_start: 0.0001
+      beta_end: 0.02
+      time_num: 1000
+      loss_type: 'mse'
+      model_mean_type: 'eps'
+      model_var_type: 'fixedsmall'
+      loss_separate: true
+      loss_iou: false
+      iou_type: none
+      train_stats_file: /media/ymxlzgy/Data/Dataset/FRONT/boxes_centered_stats_all_trainval.txt
+
+training:
+    lr: 1e-5
+    lr_policy: lambda
+    lr_decay_iters: 50
+    lambda_L1: 10.0

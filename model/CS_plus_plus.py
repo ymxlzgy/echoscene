@@ -21,7 +21,6 @@ class Sg2ScDiffModel(nn.Module):
     It has a separate embedding of shape and bounding box latents.
     """
     def __init__(self, vocab, diff_opt, diffusion_bs=8, embedding_dim=128, batch_size=32,
-                 distribution_before=True,
                  gconv_pooling='avg', gconv_num_layers=5,
                  mlp_normalization='none',
                  separated=False,
@@ -33,7 +32,6 @@ class Sg2ScDiffModel(nn.Module):
 
         gconv_dim = embedding_dim
         gconv_hidden_dim = gconv_dim * 4
-        self.dist_before = distribution_before
         self.replace_all_latent = replace_latent
         self.batch_size = batch_size
         self.embedding_dim = gconv_dim
@@ -239,112 +237,112 @@ class Sg2ScDiffModel(nn.Module):
     #     else:
     #         return d3_pred
 
-    def decoder_with_additions(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, distribution=None,gen_shape=False):
-        nodes_added = []
-        if distribution is not None:
-            mu, cov = distribution
-
-        for i in range(len(missing_nodes)):
-            ad_id = missing_nodes[i] + i
-            nodes_added.append(ad_id)
-            noise = np.zeros(z.shape[1])  # np.random.normal(0, 1, 64)
-            if distribution is not None:
-                zeros = torch.from_numpy(np.random.multivariate_normal(mu, cov, 1)).float().cuda()
-            else:
-                zeros = torch.from_numpy(noise.reshape(1, z.shape[1]))
-            zeros.requires_grad = True
-            zeros = zeros.float().cuda()
-            z = torch.cat([z[:ad_id], zeros, z[ad_id:]], dim=0)
-
-        gen_sdf = None
-        if gen_shape:
-            un_rel_feat, rel_feat = self.encoder_2(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-            sdf_candidates = dec_sdfs
-            length = objs.size(0)
-            zeros_tensor = torch.zeros_like(sdf_candidates[0])
-            mask = torch.ne(sdf_candidates, zeros_tensor)
-            ids = torch.unique(torch.where(mask)[0])
-            obj_selected = objs[ids]
-            diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
-            gen_sdf = self.ShapeDiff.rel2shape(diff_dict, uc_scale=3.)
-        dec_man_enc_pred = self.decoder(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-
-        keep = []
-        for i in range(len(z)):
-            if i not in nodes_added and i not in manipulated_nodes:
-                keep.append(1)
-            else:
-                keep.append(0)
-
-        keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
-
-        return dec_man_enc_pred, gen_sdf, keep
-
-    def decoder_with_changes(self, z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, distribution=None,gen_shape=False):
-        # append zero nodes
-        if distribution is not None:
-            (mu, cov) = distribution
-        nodes_added = []
-        for i in range(len(missing_nodes)):
-          ad_id = missing_nodes[i] + i
-          nodes_added.append(ad_id)
-          noise = np.zeros(self.embedding_dim) # np.random.normal(0, 1, 64)
-          if distribution is not None:
-            zeros = torch.from_numpy(np.random.multivariate_normal(mu, cov, 1)).float().cuda()
-          else:
-            zeros = torch.from_numpy(noise.reshape(1, z.shape[1]))
-          zeros.requires_grad = True
-          zeros = zeros.float().cuda()
-          z = torch.cat([z[:ad_id], zeros, z[ad_id:]], dim=0)
-
-        # mark changes in nodes
-        change_repr = []
-        for i in range(len(z)):
-            if i not in nodes_added and i not in manipulated_nodes:
-                noisechange = np.zeros(self.embedding_dim)
-            else:
-                noisechange = np.random.normal(0, 1, self.embedding_dim)
-            change_repr.append(torch.from_numpy(noisechange).float().cuda())
-        change_repr = torch.stack(change_repr, dim=0)
-        z_prime = torch.cat([z, change_repr], dim=1)
-        z_prime = self.manipulate(z_prime, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-
-        if not self.replace_all_latent:
-            # take original nodes when untouched
-            touched_nodes = torch.tensor(sorted(nodes_added + manipulated_nodes)).long()
-            for touched_node in touched_nodes:
-                z = torch.cat([z[:touched_node], z_prime[touched_node:touched_node + 1], z[touched_node + 1:]], dim=0)
-        else:
-            z = z_prime
-
-        gen_sdf = None
-        if gen_shape:
-            un_rel_feat, rel_feat = self.encoder_2(z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-            sdf_candidates = dec_sdfs
-            length = dec_objs.size(0)
-            zeros_tensor = torch.zeros_like(sdf_candidates[0])
-            mask = torch.ne(sdf_candidates, zeros_tensor)
-            ids = torch.unique(torch.where(mask)[0])
-            obj_selected = dec_objs[ids]
-            diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
-            gen_sdf = self.ShapeDiff.rel2shape(diff_dict,uc_scale=3.)
-        dec_man_enc_pred = self.decoder(z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat,
-                                        attributes)
-        if self.use_angles:
-            num_dec_objs = len(dec_man_enc_pred[0])
-        else:
-            num_dec_objs = len(dec_man_enc_pred)
-
-        keep = []
-        for i in range(num_dec_objs):
-          if i not in nodes_added and i not in manipulated_nodes:
-            keep.append(1)
-          else:
-            keep.append(0)
-
-        keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
-
-        return dec_man_enc_pred, gen_sdf, keep
+    # def decoder_with_additions(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, distribution=None,gen_shape=False):
+    #     nodes_added = []
+    #     if distribution is not None:
+    #         mu, cov = distribution
+    #
+    #     for i in range(len(missing_nodes)):
+    #         ad_id = missing_nodes[i] + i
+    #         nodes_added.append(ad_id)
+    #         noise = np.zeros(z.shape[1])  # np.random.normal(0, 1, 64)
+    #         if distribution is not None:
+    #             zeros = torch.from_numpy(np.random.multivariate_normal(mu, cov, 1)).float().cuda()
+    #         else:
+    #             zeros = torch.from_numpy(noise.reshape(1, z.shape[1]))
+    #         zeros.requires_grad = True
+    #         zeros = zeros.float().cuda()
+    #         z = torch.cat([z[:ad_id], zeros, z[ad_id:]], dim=0)
+    #
+    #     gen_sdf = None
+    #     if gen_shape:
+    #         un_rel_feat, rel_feat = self.encoder_2(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
+    #         sdf_candidates = dec_sdfs
+    #         length = objs.size(0)
+    #         zeros_tensor = torch.zeros_like(sdf_candidates[0])
+    #         mask = torch.ne(sdf_candidates, zeros_tensor)
+    #         ids = torch.unique(torch.where(mask)[0])
+    #         obj_selected = objs[ids]
+    #         diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
+    #         gen_sdf = self.ShapeDiff.rel2shape(diff_dict, uc_scale=3.)
+    #     dec_man_enc_pred = self.decoder(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
+    #
+    #     keep = []
+    #     for i in range(len(z)):
+    #         if i not in nodes_added and i not in manipulated_nodes:
+    #             keep.append(1)
+    #         else:
+    #             keep.append(0)
+    #
+    #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+    #
+    #     return dec_man_enc_pred, gen_sdf, keep
+    #
+    # def decoder_with_changes(self, z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, distribution=None,gen_shape=False):
+    #     # append zero nodes
+    #     if distribution is not None:
+    #         (mu, cov) = distribution
+    #     nodes_added = []
+    #     for i in range(len(missing_nodes)):
+    #       ad_id = missing_nodes[i] + i
+    #       nodes_added.append(ad_id)
+    #       noise = np.zeros(self.embedding_dim) # np.random.normal(0, 1, 64)
+    #       if distribution is not None:
+    #         zeros = torch.from_numpy(np.random.multivariate_normal(mu, cov, 1)).float().cuda()
+    #       else:
+    #         zeros = torch.from_numpy(noise.reshape(1, z.shape[1]))
+    #       zeros.requires_grad = True
+    #       zeros = zeros.float().cuda()
+    #       z = torch.cat([z[:ad_id], zeros, z[ad_id:]], dim=0)
+    #
+    #     # mark changes in nodes
+    #     change_repr = []
+    #     for i in range(len(z)):
+    #         if i not in nodes_added and i not in manipulated_nodes:
+    #             noisechange = np.zeros(self.embedding_dim)
+    #         else:
+    #             noisechange = np.random.normal(0, 1, self.embedding_dim)
+    #         change_repr.append(torch.from_numpy(noisechange).float().cuda())
+    #     change_repr = torch.stack(change_repr, dim=0)
+    #     z_prime = torch.cat([z, change_repr], dim=1)
+    #     z_prime = self.manipulate(z_prime, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
+    #
+    #     if not self.replace_all_latent:
+    #         # take original nodes when untouched
+    #         touched_nodes = torch.tensor(sorted(nodes_added + manipulated_nodes)).long()
+    #         for touched_node in touched_nodes:
+    #             z = torch.cat([z[:touched_node], z_prime[touched_node:touched_node + 1], z[touched_node + 1:]], dim=0)
+    #     else:
+    #         z = z_prime
+    #
+    #     gen_sdf = None
+    #     if gen_shape:
+    #         un_rel_feat, rel_feat = self.encoder_2(z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
+    #         sdf_candidates = dec_sdfs
+    #         length = dec_objs.size(0)
+    #         zeros_tensor = torch.zeros_like(sdf_candidates[0])
+    #         mask = torch.ne(sdf_candidates, zeros_tensor)
+    #         ids = torch.unique(torch.where(mask)[0])
+    #         obj_selected = dec_objs[ids]
+    #         diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
+    #         gen_sdf = self.ShapeDiff.rel2shape(diff_dict,uc_scale=3.)
+    #     dec_man_enc_pred = self.decoder(z, dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat,
+    #                                     attributes)
+    #     if self.use_angles:
+    #         num_dec_objs = len(dec_man_enc_pred[0])
+    #     else:
+    #         num_dec_objs = len(dec_man_enc_pred)
+    #
+    #     keep = []
+    #     for i in range(num_dec_objs):
+    #       if i not in nodes_added and i not in manipulated_nodes:
+    #         keep.append(1)
+    #       else:
+    #         keep.append(0)
+    #
+    #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+    #
+    #     return dec_man_enc_pred, gen_sdf, keep
 
     def balance_objects(self, id_list, object_list, n, shape=False):
         assert len(id_list) == len(object_list), "id_list and object_list must have the same length"
@@ -434,7 +432,7 @@ class Sg2ScDiffModel(nn.Module):
                 obj_cat_selected.append(obj_cat[selected_cat_ids])
 
                 # layout branch includes the floor
-                selected_ids = self.balance_objects(obj_cat_grained[object_ids], obj_cat[object_ids], num_obj, shape=False)
+                selected_ids = self.balance_objects(obj_cat_grained[all_ids], obj_cat[all_ids], num_obj, shape=False)
                 box_selected.append(box_candidates[selected_ids])
                 angle_selected.append(angle_candidates[selected_ids])
                 uc_rel_b_selected.append(uc_rel_b[selected_ids])

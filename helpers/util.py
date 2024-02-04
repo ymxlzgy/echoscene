@@ -523,6 +523,7 @@ def normalize_box_params(box_params, file=None, scale=3):
     :param scale: float scalar that scales the parameter distribution
     :return: normalized box parameters array of shape [7]
     """
+    assert file is not None
     if file == None:
         mean = np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847, 0.73127955])
         std = np.array([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753, 0.50347435])
@@ -541,6 +542,7 @@ def denormalize_box_params(box_params, file=None, scale=3, params=7):
     :param params: number of bounding box parameters. Expects values of either 6 or 7. 6 omits the angle
     :return: denormalized box parameters array of shape [params]
     """
+    assert file is not None
     if file == None:
         if params == 6:
             mean = np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847])
@@ -566,6 +568,7 @@ def batch_torch_denormalize_box_params(box_params, file=None, scale=3, params=7)
     :param scale: float scalar that scales the parameter distribution
     :return: float tensor of shape [N, 6], the denormalized box parameters
     """
+    assert file is not None
     if file == None:
         if params == 6:
             mean = torch.from_numpy(np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847]).reshape(1,-1)).cuda()

@@ -67,7 +67,7 @@ parser.add_argument('--loadmodel', default=False, type=bool_flag)
 parser.add_argument('--loadepoch', default=90, type=int, help='only valid when loadmodel is true')
 parser.add_argument('--replace_latent', default=True, type=bool_flag)
 parser.add_argument('--network_type', default='cs++', choices=['cs++', 'cs++_l'], type=str)
-parser.add_argument('--diff_yaml', default='../config/v2_full.yaml', type=str,
+parser.add_argument('--diff_yaml', default='../config/cs_full.yaml', type=str,
                     help='config of the diffusion network [cross_attn/concat]')
 
 parser.add_argument('--vis_num', type=int, default=8, help='for visualization in the training')
@@ -258,7 +258,8 @@ def train():
                                            dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
                                            dec_objs_to_scene, missing_nodes, manipulated_triples)
 
-            model.diff.ShapeDiff.update_loss()
+            if args.network_type == 'cs++':
+                model.diff.ShapeDiff.update_loss()
 
             loss = 100 * shape_loss + layout_loss
 
@@ -267,7 +268,8 @@ def train():
 
             # Cap the occasional super mutant gradient spikes
             # Do now a gradient step and plot the losses
-            torch.nn.utils.clip_grad_norm_(model.diff.ShapeDiff.df_module.parameters(), 5.0)
+            if args.network_type == 'cs++':
+                torch.nn.utils.clip_grad_norm_(model.diff.ShapeDiff.df_module.parameters(), 5.0)
             for group in model.diff.optimizerFULL.param_groups:
                 for p in group['params']:
                     if p.grad is not None and p.requires_grad and torch.isnan(p.grad).any():
@@ -283,9 +285,10 @@ def train():
 
             if counter % 50 == 0:
                 message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.4f}".format( counter, layout_loss, shape_loss, current_lr)
-                loss_diff = model.diff.ShapeDiff.get_current_errors()
-                for k, v in loss_diff.items():
-                    message += ' %s: %.6f ' % (k, v)
+                if args.network_type == 'cs++':
+                    loss_diff = model.diff.ShapeDiff.get_current_errors()
+                    for k, v in loss_diff.items():
+                        message += ' %s: %.6f ' % (k, v)
                 print(message)
 
             writer.add_scalar('Loss_BBox', layout_loss, counter)
@@ -298,7 +301,7 @@ def train():
             # t = (time.time() - iter_start_time) / args.batchSize
             # loss_diff = model.diff.ShapeDiff.get_current_errors()
             # model.diff.visualizer.print_current_errors(writer, counter, loss_diff, t)
-            if counter % 1000 == 0:
+            if counter % 1000 == 0 and obj_selected is not None:
                 model.diff.ShapeDiff.gen_shape_after_foward(num_obj=args.vis_num)
                 model.diff.visualizer.display_current_results(writer, model.diff.ShapeDiff.get_current_visuals(
                     dataset.classes_r, obj_selected.detach().cpu().numpy(), num_obj=args.vis_num),
@@ -306,7 +309,7 @@ def train():
 
 
 
-        if epoch % 5 == 0:
+        if epoch % 15 == 0:
             model.save(args.exp, args.outf, epoch, counter=counter)
             print('saved model_{}'.format(epoch))
 
