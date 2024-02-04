@@ -24,6 +24,11 @@ conda create -n commonscenes python=3.8
 conda activate commonscenes
 pip install -r requirements.txt 
 pip install einops omegaconf tensorboardx open3d
+pip install -U openmim
+mim install mmengine
+mim install mmcv
+mim install mmdet
+mim install mmdet3d
 ```
 
 To install CLIP, follow this <a href="[https://github.com/TheoDEPRELLE/AtlasNetV2](https://github.com/openai/CLIP)">OpenAI CLIP repo</a>:
