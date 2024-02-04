@@ -417,12 +417,11 @@ class GaussianDiffusion:
                     w_iou_selected = w_iou[iou_indices[0]].reshape(-1)
                     bbox_iou_valid = bbox_iou[iou_indices] + 1e-6 # meaningful bbox_iou in the same scene.
                     loss_iou_valid = w_iou_selected * 0.5 * bbox_iou_valid
-                    losses = losses + loss_iou_valid
                 else:
                     loss_iou_valid = torch.zeros(B).to(data_start.device)
                     bbox_iou_valid = torch.zeros(B).to(data_start.device)
                     
-                return losses, {
+                return losses.mean() + loss_iou_valid.mean(), {
                     'loss.bbox': loss_bbox.mean(),
                     'loss.trans': loss_trans.mean(),
                     'loss.size': loss_size.mean(),
@@ -437,7 +436,7 @@ class GaussianDiffusion:
             raise NotImplementedError(self.loss_type)
 
         assert losses.shape == torch.Size([B])
-        return losses
+        return loss
                    
     
     def descale_to_origin(self, x, minimum, maximum):
@@ -541,10 +540,10 @@ class DiffusionPoint(nn.Module):
         if noises is not None:
             noises[t!=0] = torch.randn((t!=0).sum(), *noises.shape[1:]).to(noises)
 
-        losses, loss_dict = self.diffusion.p_losses(
+        loss, loss_dict = self.diffusion.p_losses(
             denoise_fn=self._denoise, data_start=data, t=t, noise=noises, condition=condition, condition_cross=condition_cross, scene_ids=scene_ids)
-        assert losses.shape == t.shape == torch.Size([B])
-        return losses.mean(), loss_dict
+        assert t.shape == torch.Size([B])
+        return loss, loss_dict
     
 
     def gen_samples(self, shape, device, condition=None, condition_cross=None, noise_fn=torch.randn,
