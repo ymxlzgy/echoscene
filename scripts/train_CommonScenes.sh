@@ -1,0 +1,1 @@
+python train_3dfront.py --exp ./experiments/g2sv2/all --room_type all --dataset /media/ymxlzgy/Data/Dataset/FRONT --residual True --network_type v2_full --with_SDF True --with_CLIP True --batchSize 8 --workers 4 --loadmodel False --nepoch 10000 --large False

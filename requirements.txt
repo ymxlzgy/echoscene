@@ -1,0 +1,16 @@
+matplotlib==3.7.2
+numpy==1.23
+pyyaml==6.0
+scipy==1.10
+tqdm==4.65.0
+wheel==0.38.4
+pyyaml
+pyrender
+seaborn
+trimesh
+h5py
+PyMCubes
+imageio
+scikit-image
+fvcore
+opencv-python==4.8.0.76

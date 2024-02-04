@@ -1,0 +1,22 @@
+data:
+    dataset_type: "cached_threedfront"
+    encoding_type: "cached_wocm_no_prm"
+    dataset_directory: "/media/ymxlzgy/Data/Dataset/3D-FRONT/3D-FRONT_preprocessed/library"
+    annotation_file: "../config/library_threed_front_splits.csv"
+    path_to_invalid_scene_ids: "../config/invalid_threed_front_rooms.txt"
+    path_to_invalid_bbox_jids: "../config/black_list.txt"
+    filter_fn: "threed_front_library"
+    train_stats: "dataset_stats.txt"
+    room_layout_size: "64,64"
+
+train:
+    splits: ["train"]
+val:
+    splits: ["val"]
+test:
+    splits: ["test"]
+all:
+    splits: ["train", "val", "test"]
+trainval:
+    splits: ["train", "val"]
+
