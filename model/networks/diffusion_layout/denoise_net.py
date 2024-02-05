@@ -382,7 +382,7 @@ class Unet1D(nn.Module):
             self.downs.append(nn.ModuleList([
                 block_klass(dim_in, dim_in, time_emb_dim = self.context_dim),
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
-                AttentionCross(dim_in, context_dim=self.context_dim), # TODO if crossattn
+                AttentionCross(dim_in, context_dim=self.context_dim), # if crossattn
                 block_klass(dim_in, dim_in, time_emb_dim=self.context_dim), # if concat
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_in, LinearAttention(dim_in))),
@@ -392,7 +392,7 @@ class Unet1D(nn.Module):
         mid_dim = dims[-1]
         self.mid_block0 = block_klass(mid_dim, mid_dim, time_emb_dim = self.context_dim)
         self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
-        self.mid_attn_cross = AttentionCross(mid_dim, context_dim=self.context_dim) # TODO if crossattn
+        self.mid_attn_cross = AttentionCross(mid_dim, context_dim=self.context_dim) # if crossattn
         self.mid_concat = block_klass(mid_dim, mid_dim, time_emb_dim=self.context_dim), # if concat
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
         self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
@@ -403,7 +403,7 @@ class Unet1D(nn.Module):
             self.ups.append(nn.ModuleList([
                 block_klass(dim_out, dim_in, time_emb_dim = self.context_dim),
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
-                AttentionCross(dim_out, context_dim=self.context_dim), # TODO if crossattn
+                AttentionCross(dim_out, context_dim=self.context_dim), # if crossattn
                 block_klass(dim_out, dim_out, time_emb_dim=self.context_dim),  # if concat
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_out, LinearAttention(dim_out))),

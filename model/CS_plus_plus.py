@@ -344,30 +344,30 @@ class Sg2ScDiffModel(nn.Module):
     #
     #     return dec_man_enc_pred, gen_sdf, keep
 
-    def balance_objects(self, id_list, object_list, n, shape=False):
-        assert len(id_list) == len(object_list), "id_list and object_list must have the same length"
+    def balance_objects(self, cat_grained_list, cat_list, n, shape_branch=False):
+        assert len(cat_grained_list) == len(cat_list), "grained list and coarse list must have the same length"
 
-        unique_ids = torch.unique(id_list)
+        unique_grained_ids = torch.unique(cat_grained_list)
         selected_object_indices = []
 
         # find n fine-grained objects to ensure diffusion meet all fine-grained classes in the scene
-        if len(unique_ids) >= n:
-            sampled_unique_ids = random.sample(unique_ids.tolist(), n)
+        if len(unique_grained_ids) >= n:
+            sampled_grained = random.sample(unique_grained_ids.tolist(), n)
 
         # fine-grained classes less than n, we take all fine-grained classes and randomly obtain the rest
         else:
-            sampled_unique_ids = unique_ids.tolist()
-            remaining_n = n - len(unique_ids)
-            sampled_unique_ids += random.choices(id_list.tolist(), k=remaining_n)
+            sampled_grained = unique_grained_ids.tolist()
+            remaining_n = n - len(unique_grained_ids)
+            sampled_grained += random.choices(cat_grained_list.tolist(), k=remaining_n)
 
         # find the corresponding ids in the coarse object classes
-        for selected_id in sampled_unique_ids:
-            if shape:
-                selected_indices = (id_list == selected_id).nonzero(as_tuple=True)[0]
+        for grained_cat_id in sampled_grained:
+            if shape_branch:
+                selected_indices = (cat_grained_list == grained_cat_id).nonzero(as_tuple=True)[0]
             else:
-                selected_indices = [i for i, x in enumerate(id_list) if x == selected_id]
-            selected_object_idx = selected_indices[random.choice(range(len(selected_indices)))]
-            selected_object_indices.append(selected_object_idx)
+                selected_indices = [i for i, x in enumerate(cat_grained_list) if x == grained_cat_id]
+            selected_index = selected_indices[random.choice(range(len(selected_indices)))] # only pick one index for a grained_cat
+            selected_object_indices.append(selected_index)
 
         return torch.tensor(selected_object_indices)
 
@@ -404,39 +404,39 @@ class Sg2ScDiffModel(nn.Module):
             length = obj_cat.size(0)
             zeros_tensor = torch.zeros_like(sdf_candidates[0])
             mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
-            object_ids = torch.unique(torch.where(mask)[0]) # non-floor object ids (for shape branch)
-            all_ids = torch.arange(sdf_candidates.shape[0]) # all object ids (for layout branch)
+            object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
+            all_inds = torch.arange(box_candidates[:-1,:].shape[0]) # all bbox indices except __scene__(for layout branch)
             if random:
                 # randomly choose num_obj elements for shape branch
-                perm_obj = torch.randperm(len(object_ids))
-                random_obj_ids = object_ids[perm_obj[:num_obj]]
-                sdf_selected.append(sdf_candidates[random_obj_ids])
-                uc_rel_s_selected.append(uc_rel_s[random_obj_ids])
-                c_rel_s_selected.append(c_rel_s[random_obj_ids])
-                obj_cat_selected.append(obj_cat[random_obj_ids])
+                perm_obj = torch.randperm(len(object_inds))
+                random_obj_inds = object_inds[perm_obj[:num_obj]]
+                sdf_selected.append(sdf_candidates[random_obj_inds])
+                uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
+                c_rel_s_selected.append(c_rel_s[random_obj_inds])
+                obj_cat_selected.append(obj_cat[random_obj_inds])
 
                 # randomly choose num_obj elements for layout branch
-                perm = torch.randperm(len(all_ids))
-                random_elements = all_ids[perm[:num_obj]]
-                box_selected.append(box_candidates[random_elements])
-                angle_selected.append(angle_candidates[random_elements])
-                uc_rel_b_selected.append(uc_rel_b[random_elements])
-                c_rel_b_selected.append(c_rel_b[random_elements])
+                perm = torch.randperm(len(all_inds))
+                random_obj_inds = all_inds[perm[:num_obj]]
+                box_selected.append(box_candidates[random_obj_inds])
+                angle_selected.append(angle_candidates[random_obj_inds])
+                uc_rel_b_selected.append(uc_rel_b[random_obj_inds])
+                c_rel_b_selected.append(c_rel_b[random_obj_inds])
             else:
                 ## balance every fine-grained category.
                 # shape branch excludes the floor
-                selected_cat_ids = self.balance_objects(obj_cat_grained[object_ids], obj_cat[object_ids], num_obj, shape=True)
-                sdf_selected.append(sdf_candidates[selected_cat_ids])
-                uc_rel_s_selected.append(uc_rel_s[selected_cat_ids])
-                c_rel_s_selected.append(c_rel_s[selected_cat_ids])
-                obj_cat_selected.append(obj_cat[selected_cat_ids])
+                selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
+                sdf_selected.append(sdf_candidates[object_inds][selected_inds])
+                uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
+                c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
+                obj_cat_selected.append(obj_cat[object_inds][selected_inds])
 
                 # layout branch includes the floor
-                selected_ids = self.balance_objects(obj_cat_grained[all_ids], obj_cat[all_ids], num_obj, shape=False)
-                box_selected.append(box_candidates[selected_ids])
-                angle_selected.append(angle_candidates[selected_ids])
-                uc_rel_b_selected.append(uc_rel_b[selected_ids])
-                c_rel_b_selected.append(c_rel_b[selected_ids])
+                selected_inds = self.balance_objects(obj_cat_grained[all_inds], obj_cat[all_inds], num_obj, shape_branch=False) # selected_inds are indices of obj_cat_grained[all_inds]
+                box_selected.append(box_candidates[all_inds][selected_inds])
+                angle_selected.append(angle_candidates[all_inds][selected_inds])
+                uc_rel_b_selected.append(uc_rel_b[all_inds][selected_inds])
+                c_rel_b_selected.append(c_rel_b[all_inds][selected_inds])
 
                 # essential_names = self.obj_classes_grained
             scene_ids.append(np.repeat(i,num_obj))

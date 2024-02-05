@@ -1,8 +1,8 @@
 hyper:
-    batch_size: 32
+    batch_size: 8
     gpu_ids: 0
-    logs_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
-    results_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
+    logs_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
+    results_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
     name: ./
     isTrain: True
     device: 'cuda'
@@ -40,7 +40,7 @@ layout_branch:
       loss_separate: true
       loss_iou: true
       iou_type: obb
-      train_stats_file: /media/ymxlzgy/Data/Dataset/FRONT/boxes_centered_stats_all_trainval.txt
+      train_stats_file: /media/student/Data/guangyao/3D-FRONT/boxes_centered_stats_all_trainval.txt
 
 shape_branch:
     model: sdfusion-txt2shape

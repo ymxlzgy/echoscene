@@ -285,30 +285,27 @@ class Sg2BoxDiffModel(nn.Module):
     #
     #     return dec_man_enc_pred, gen_sdf, keep
 
-    def balance_objects(self, id_list, object_list, n, shape=False):
-        assert len(id_list) == len(object_list), "id_list and object_list must have the same length"
+    def balance_objects(self, cat_grained_list, cat_list, n):
+        assert len(cat_grained_list) == len(cat_list), "grained list and coarse list must have the same length"
 
-        unique_ids = torch.unique(id_list)
+        unique_grained_ids = torch.unique(cat_grained_list)
         selected_object_indices = []
 
         # find n fine-grained objects to ensure diffusion meet all fine-grained classes in the scene
-        if len(unique_ids) >= n:
-            sampled_unique_ids = random.sample(unique_ids.tolist(), n)
+        if len(unique_grained_ids) >= n:
+            sampled_grained = random.sample(unique_grained_ids.tolist(), n)
 
         # fine-grained classes less than n, we take all fine-grained classes and randomly obtain the rest
         else:
-            sampled_unique_ids = unique_ids.tolist()
-            remaining_n = n - len(unique_ids)
-            sampled_unique_ids += random.choices(id_list.tolist(), k=remaining_n)
+            sampled_grained = unique_grained_ids.tolist()
+            remaining_n = n - len(unique_grained_ids)
+            sampled_grained += random.choices(cat_grained_list.tolist(), k=remaining_n)
 
         # find the corresponding ids in the coarse object classes
-        for selected_id in sampled_unique_ids:
-            if shape:
-                selected_indices = (id_list == selected_id).nonzero(as_tuple=True)[0]
-            else:
-                selected_indices = [i for i, x in enumerate(id_list) if x == selected_id]
-            selected_object_idx = selected_indices[random.choice(range(len(selected_indices)))]
-            selected_object_indices.append(selected_object_idx)
+        for grained_cat_id in sampled_grained:
+            selected_indices = [i for i, x in enumerate(cat_grained_list) if x == grained_cat_id]
+            selected_index = selected_indices[random.choice(range(len(selected_indices)))]
+            selected_object_indices.append(selected_index)
 
         return torch.tensor(selected_object_indices)
 
@@ -336,8 +333,8 @@ class Sg2BoxDiffModel(nn.Module):
             all_ids = torch.arange(box_candidates.shape[0]) # all object ids (for layout branch)
             if random:
                 # randomly choose num_obj elements for layout branch
-                perm = torch.randperm(len(all_ids))
-                random_elements = all_ids[perm[:num_obj]]
+                perm = torch.randperm(len(all_ids)) # shuffle all_ids
+                random_elements = all_ids[perm[:num_obj]] # pick out top-num_obj ids
                 box_selected.append(box_candidates[random_elements])
                 angle_selected.append(angle_candidates[random_elements])
                 uc_rel_b_selected.append(uc_rel_b[random_elements])
@@ -345,12 +342,12 @@ class Sg2BoxDiffModel(nn.Module):
                 obj_cat_selected.append(obj_cat[random_elements])
             else:
                 # balance every fine-grained category.
-                selected_ids = self.balance_objects(obj_cat_grained[all_ids], obj_cat[all_ids], num_obj, shape=False)
-                box_selected.append(box_candidates[selected_ids])
-                angle_selected.append(angle_candidates[selected_ids])
-                uc_rel_b_selected.append(uc_rel_b[selected_ids])
-                c_rel_b_selected.append(c_rel_b[selected_ids])
-                obj_cat_selected.append(obj_cat[selected_ids])
+                selected_ids = self.balance_objects(obj_cat_grained[all_ids], obj_cat[all_ids], num_obj)
+                box_selected.append(box_candidates[all_ids][selected_ids])
+                angle_selected.append(angle_candidates[all_ids][selected_ids])
+                uc_rel_b_selected.append(uc_rel_b[all_ids][selected_ids])
+                c_rel_b_selected.append(c_rel_b[all_ids][selected_ids])
+                obj_cat_selected.append(obj_cat[all_ids][selected_ids])
             scene_ids.append(np.repeat(i,num_obj))
 
         box_selected = torch.cat(box_selected, dim=0).cuda()

@@ -286,52 +286,52 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             if self.recompute_clip:
                 self.clip_feats_path += 'tmp'
 
-        feats_path = self.root + "/DEEPSDF_reconstruction/Codes/" # for Graph-to-3D
+        # feats_path = self.root + "/DEEPSDF_reconstruction/Codes/" # for Graph-to-3D
 
-        # Load points for debug
-        if self.with_feats and (not os.path.exists(feats_path) or self.recompute_feats):
-            if scan_id in self.files: # Caching
-                (points_list, points_norm_list, instances_list) = self.files[scan_id]
-            else:
-                points_list=np.array([]).reshape(-1,3)
-                points_norm_list = np.array([]).reshape(-1, 3)
-                instances_list=np.array([]).reshape(-1,1)
-                for key_, value_ in self.tight_boxes_json[scan_id].items():
-                    if isinstance(key_,int):
-                        path = self.tight_boxes_json[scan_id][key_]["model_path"]
-                        # object points
-                        if path is not None:
-                            raw_mesh = trimesh.load(path)
-                            position = self.tight_boxes_json[scan_id][key_]["param7"][3:6]
-                            theta = self.tight_boxes_json[scan_id][key_]["param7"][-1]
-                            R = np.zeros((3, 3))
-                            R[0, 0] = np.cos(theta)
-                            R[0, 2] = -np.sin(theta)
-                            R[2, 0] = np.sin(theta)
-                            R[2, 2] = np.cos(theta)
-                            R[1, 1] = 1.
-                            points = raw_mesh.copy().vertices
-                            point_norm = self.norm_points(points) #normliazed in each individual boxes
-                            points = points.dot(R) + position # not centered yet
-                        # floor points
-                        else:
-                            position = self.tight_boxes_json[scan_id][key_]["param7"][3:6]
-                            l,w = self.tight_boxes_json[scan_id][key_]["param7"][0], self.tight_boxes_json[scan_id][key_]["param7"][2]
-                            x = l * np.random.random(1000)+ position[0] - l/2
-                            z = w * np.random.random(1000)+ position[2] - w/2
-                            y = np.repeat(0,1000)
-                            points = np.vstack((x,y,z)).transpose()
-                            point_norm = self.norm_points(points)
-                        points_list = np.concatenate((points_list, points), axis=0)
-                        points_norm_list = np.concatenate((points_norm_list, point_norm), axis=0)
-                        instances = np.repeat(key_, points.shape[0]).reshape(-1, 1)
-                        instances_list = np.concatenate((instances_list, instances), axis=0)
-
-                if self.fm.user_free > 5:
-                    self.files[scan_id] = (points_list, points_norm_list, instances_list)
-
-            print("shifting points")
-            points_list = points_list - np.array(self.tight_boxes_json[scan_id]['scene_center']) # centered in the scene
+        ## Load points for debug
+        # if self.with_feats and (not os.path.exists(feats_path) or self.recompute_feats):
+        #     if scan_id in self.files: # Caching
+        #         (points_list, points_norm_list, instances_list) = self.files[scan_id]
+        #     else:
+        #         points_list=np.array([]).reshape(-1,3)
+        #         points_norm_list = np.array([]).reshape(-1, 3)
+        #         instances_list=np.array([]).reshape(-1,1)
+        #         for key_, value_ in self.tight_boxes_json[scan_id].items():
+        #             if isinstance(key_,int):
+        #                 path = self.tight_boxes_json[scan_id][key_]["model_path"]
+        #                 # object points
+        #                 if path is not None:
+        #                     raw_mesh = trimesh.load(path)
+        #                     position = self.tight_boxes_json[scan_id][key_]["param7"][3:6]
+        #                     theta = self.tight_boxes_json[scan_id][key_]["param7"][-1]
+        #                     R = np.zeros((3, 3))
+        #                     R[0, 0] = np.cos(theta)
+        #                     R[0, 2] = -np.sin(theta)
+        #                     R[2, 0] = np.sin(theta)
+        #                     R[2, 2] = np.cos(theta)
+        #                     R[1, 1] = 1.
+        #                     points = raw_mesh.copy().vertices
+        #                     point_norm = self.norm_points(points) #normliazed in each individual boxes
+        #                     points = points.dot(R) + position # not centered yet
+        #                 # floor points
+        #                 else:
+        #                     position = self.tight_boxes_json[scan_id][key_]["param7"][3:6]
+        #                     l,w = self.tight_boxes_json[scan_id][key_]["param7"][0], self.tight_boxes_json[scan_id][key_]["param7"][2]
+        #                     x = l * np.random.random(1000)+ position[0] - l/2
+        #                     z = w * np.random.random(1000)+ position[2] - w/2
+        #                     y = np.repeat(0,1000)
+        #                     points = np.vstack((x,y,z)).transpose()
+        #                     point_norm = self.norm_points(points)
+        #                 points_list = np.concatenate((points_list, points), axis=0)
+        #                 points_norm_list = np.concatenate((points_norm_list, point_norm), axis=0)
+        #                 instances = np.repeat(key_, points.shape[0]).reshape(-1, 1)
+        #                 instances_list = np.concatenate((instances_list, instances), axis=0)
+        #
+        #         if self.fm.user_free > 5:
+        #             self.files[scan_id] = (points_list, points_norm_list, instances_list)
+        #
+        #     print("shifting points")
+        #     points_list = points_list - np.array(self.tight_boxes_json[scan_id]['scene_center']) # centered in the scene
 
         instance2mask = {}
         instance2mask[0] = 0
@@ -346,9 +346,8 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         selected_shapes = []
         obj_sdf_list = []
 
-        # key: 1 of 1: 'floor' instance_id              keys: whole instance ids
+        # key: 1 of {1: 'floor', ...,} instance_id              keys: whole instance ids
         for key in keys:
-            # get objects from the selected list of classes of 3dssg
             scene_instance_id = key
             scene_instance_class = instance2label[key]
             if not self.large:
@@ -362,7 +361,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             instance2mask[scene_instance_id] = counter + 1
             counter += 1
 
-            # mask to cat:
             if (scene_class_id >= 0) and (scene_instance_id > 0):
                 selected_shapes.append(True)
                 cat_ids.append(scene_class_id)
@@ -372,15 +370,16 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                     cat_ids_grained.append(scene_class_id)
                 bbox = np.array(self.tight_boxes_json[scan_id][key]['param7'].copy())
                 bbox[3:6] -= np.array(self.tight_boxes_json[scan_id]['scene_center'])
-
                 instances_order.append(key)
-                bins = np.linspace(np.deg2rad(-180), np.deg2rad(180), 24)
-                angle = np.digitize(bbox[6], bins) if self.bin_angle else bbox[6]
-                bbox = normalize_box_params(bbox,file=self.box_normalized_stats)
                 if self.bin_angle:
-                    bbox[6] = angle
-
+                    bins = np.linspace(np.deg2rad(-180), np.deg2rad(180), 24)
+                    bin_angle = np.digitize(bbox[6], bins)
+                    bbox[6] = bin_angle
+                    bbox[0:6] = normalize_box_params(bbox[0:6], params=6,file=self.box_normalized_stats)
+                else:
+                    bbox = normalize_box_params(bbox, params=7, file=self.box_normalized_stats)
                 tight_boxes.append(bbox)
+
             if self.use_SDF:
                 if self.tight_boxes_json[scan_id][key]["model_path"] is None:
                     obj_sdf_list.append(torch.zeros((1, self.sdf_res, self.sdf_res, self.sdf_res))) # floor
@@ -410,24 +409,24 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 clip_feats_ins = list(np.concatenate(ordered_feats, axis=0))
                 clip_feats_rel = clip_feats_dic['rel_feats']
 
-        if self.with_feats:
-            # If precomputed features exist, we simply load them
-            latents = []
-            #for key_, value_ in self.tight_boxes_json[scan_id].items():
-            for key_ in instances_order: # get the objects in order
-                if isinstance(key_, int):
-                    path = self.tight_boxes_json[scan_id][key_]["model_path"]
-                    if path is None:
-                        latent_code = np.zeros([1, 256]) #for the floor, latent_code.shape[1]=256
-                        #print("why is it none?")
-                    else:
-                        model_id = path.split('/')[-2]
-                        latent_code_path = feats_path + model_id + "/sdf.pth"
-                        latent_code = torch.load(latent_code_path, map_location="cpu")[0]
-                        latent_code = latent_code.detach().numpy()
-                    latents.append(latent_code)
-            latents.append(np.zeros([1, 256])) # for the room shape
-            feats_in = list(np.concatenate(latents, axis=0))
+        # if self.with_feats:
+        #     # If precomputed features exist, we simply load them
+        #     latents = []
+        #     #for key_, value_ in self.tight_boxes_json[scan_id].items():
+        #     for key_ in instances_order: # get the objects in order
+        #         if isinstance(key_, int):
+        #             path = self.tight_boxes_json[scan_id][key_]["model_path"]
+        #             if path is None:
+        #                 latent_code = np.zeros([1, 256]) #for the floor, latent_code.shape[1]=256
+        #                 #print("why is it none?")
+        #             else:
+        #                 model_id = path.split('/')[-2]
+        #                 latent_code_path = feats_path + model_id + "/sdf.pth"
+        #                 latent_code = torch.load(latent_code_path, map_location="cpu")[0]
+        #                 latent_code = latent_code.detach().numpy()
+        #             latents.append(latent_code)
+        #     latents.append(np.zeros([1, 256])) # for the room shape
+        #     feats_in = list(np.concatenate(latents, axis=0))
 
         triples = []
         words = []

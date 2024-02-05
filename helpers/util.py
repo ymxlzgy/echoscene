@@ -516,7 +516,7 @@ def get_rotation_3dfront(y, degree=True):
     return rot
 
 
-def normalize_box_params(box_params, file=None, scale=3):
+def normalize_box_params(box_params, params=7, file=None, scale=3):
     """ Normalize the box parameters for more stable learning utilizing the accumulated dataset statistics
 
     :param box_params: float array of shape [7] containing the box parameters
@@ -529,7 +529,12 @@ def normalize_box_params(box_params, file=None, scale=3):
         std = np.array([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753, 0.50347435])
     else:
         stats = np.loadtxt(file)
-        mean, std = stats[0], stats[1]
+        if params == 6:
+            mean, std = stats[0][:6], stats[1][:6]
+        elif params == 7:
+            mean, std = stats[0], stats[1]
+        else:
+            raise NotImplementedError
 
     return scale * ((box_params - mean) / std)
 
