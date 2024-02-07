@@ -6,7 +6,7 @@ from torch.nn import Module
 from torch.nn.utils import clip_grad_norm_
 
 from .diffusion_ddpm import DiffusionPoint
-from .denoise_net_new import Unet1D
+from .denoise_net import UNet1DModel
 import clip
 
 class DiffusionSceneLayout_DDPM(Module):
@@ -29,10 +29,10 @@ class DiffusionSceneLayout_DDPM(Module):
             else:
                 raise TypeError
 
-        self.rel_condition = config.layout_branch.denoiser_kwargs.relation_condition
+        self.rel_condition = config.layout_branch.relation_condition
         # define the denoising network
         if config.layout_branch.denoiser == "unet1d":
-            denoise_net = Unet1D(**config.layout_branch.denoiser_kwargs)
+            denoise_net = UNet1DModel(**config.layout_branch.denoiser_kwargs)
         else:
             raise NotImplementedError()
 
@@ -48,7 +48,7 @@ class DiffusionSceneLayout_DDPM(Module):
         # read object property dimension
         self.translation_dim = config.layout_branch.get("translation_dim", 3)
         self.size_dim = config.layout_branch.get("size_dim", 3)
-        self.angle_dim = config.layout_branch.get("angle_dim", 1)
+        self.angle_dim = config.layout_branch.angle_dim
         self.bbox_dim = self.translation_dim + self.size_dim + self.angle_dim
 
         # param list
@@ -102,6 +102,7 @@ class DiffusionSceneLayout_DDPM(Module):
         rel = self.rel
         uc_rel = self.uc_rel
         target_box = self.x
+
         # Compute the loss
         self.loss, self.loss_dict = self.get_loss(uc_rel, rel, target_box)
         return self.loss, self.loss_dict

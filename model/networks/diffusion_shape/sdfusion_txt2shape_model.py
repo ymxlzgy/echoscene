@@ -230,7 +230,7 @@ class SDFusionText2ShapeModel(BaseModel):
         
         self.x = input['sdf']
 
-        self.rel = input['rel_s']
+        self.rel = input['c_s']
         B = self.x.shape[0]
         self.uc_rel = input['uc_s']
         if self.df.conditioning_key == 'concat':

@@ -11,7 +11,7 @@ import copy
 from tqdm import tqdm
 import json
 from helpers.psutil import FreeMemLinux
-from helpers.util import normalize_box_params
+from helpers.util import scale_box_params, standardize_box_params
 from omegaconf import OmegaConf
 import clip
 import random
@@ -96,14 +96,13 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         self.relationships_dict = dict(zip(self.relationships,range(1,len(self.relationships)+1)))
         self.relationships_dict_r = dict(zip(self.relationships_dict.values(), self.relationships_dict.keys()))
 
+        self.box_normalized_stats = os.path.join(self.root, 'centered_bounds_{}_trainval.txt'.format(self.room_type)) # always use this
         if split == 'train_scans': # training set
             self.rel_json_file = os.path.join(self.root, 'relationships_{}_trainval.json'.format(self.room_type))
             self.box_json_file = os.path.join(self.root, 'obj_boxes_{}_trainval.json'.format(self.room_type))
-            self.box_normalized_stats = os.path.join(self.root, 'boxes_centered_stats_{}_trainval.txt'.format(self.room_type))
         else: # test set
             self.rel_json_file = os.path.join(self.root, 'relationships_{}_test.json'.format(self.room_type))
             self.box_json_file = os.path.join(self.root, 'obj_boxes_{}_test.json'.format(self.room_type))
-            self.box_normalized_stats = os.path.join(self.root, 'boxes_centered_stats_{}_test.txt'.format(self.room_type))
 
 
         self.relationship_json, self.objs_json, self.tight_boxes_json = \
@@ -371,13 +370,13 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 bbox = np.array(self.tight_boxes_json[scan_id][key]['param7'].copy())
                 bbox[3:6] -= np.array(self.tight_boxes_json[scan_id]['scene_center'])
                 instances_order.append(key)
-                if self.bin_angle:
+                if self.bin_angle: # bin angle is not possible for current diffusion
                     bins = np.linspace(np.deg2rad(-180), np.deg2rad(180), 24)
                     bin_angle = np.digitize(bbox[6], bins)
                     bbox[6] = bin_angle
-                    bbox[0:6] = normalize_box_params(bbox[0:6], params=6,file=self.box_normalized_stats)
+                    bbox[0:6] = standardize_box_params(bbox[0:6], params=6,file=self.box_normalized_stats)
                 else:
-                    bbox = normalize_box_params(bbox, params=7, file=self.box_normalized_stats)
+                    bbox = scale_box_params(bbox, file=self.box_normalized_stats, angle=False) # need to change angle after
                 tight_boxes.append(bbox)
 
             if self.use_SDF:

@@ -5,15 +5,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from omegaconf import OmegaConf
 from model.graph import GraphTripleConvNet, _init_weights, make_mlp
-from model.networks.diffusion_shape.sdfusion_txt2shape_model import SDFusionText2ShapeModel
-from model.networks.diffusion_shape.diff_utils.visualizer import Visualizer
-from model.networks.diffusion_shape.diff_utils.distributed import get_rank
-from model.networks.diffusion_layout.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
+from model.networks.diffusion_layout2.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
 import numpy as np
-from helpers.util import bool_flag, _CustomDataParallel
 from helpers.lr_scheduler import *
-from fvcore.common.param_scheduler import MultiStepParamScheduler
-
 
 class Sg2BoxDiffModel(nn.Module):
     """
@@ -107,25 +101,26 @@ class Sg2BoxDiffModel(nn.Module):
 
         # initialization
         self.rel_l_mlp.apply(_init_weights)
+        self.lr_init = 1e-4
 
-    # 0-20k->20k-60k->60k-100k->100k-
+    # 0-20k->20k-60k->60k-120k->120k-
     # 1e-4 -> 5e-5 -> 1e-5 -> 5e-6
     def lr_lambda(self, counter):
-        # 10000
+        # 20000
         if counter < 20000:
             return 1.0
-        # 40000
+        # 60000
         elif counter < 60000:
-            return 5e-5 / 1e-4
-        # 80000
-        elif counter < 100000:
-            return 1e-5 / 1e-4
+            return 5e-5 / self.lr_init
+        # 100000
+        elif counter < 120000:
+            return 1e-5 / self.lr_init
         else:
-            return 5e-6 / 1e-4
+            return 5e-6 / self.lr_init
 
     def optimizer_ini(self):
         gcn_layout_df_params = [p for p in self.parameters() if p.requires_grad == True]
-        self.optimizerFULL = optim.AdamW(gcn_layout_df_params, lr=1e-4)  # self.lr)
+        self.optimizerFULL = optim.AdamW(gcn_layout_df_params, lr=self.lr_init)  # self.lr)
         self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizerFULL, lr_lambda=self.lr_lambda)
         self.optimizers = [self.optimizerFULL]
 
@@ -357,7 +352,7 @@ class Sg2BoxDiffModel(nn.Module):
         c_rel_b_selected = torch.cat(c_rel_b_selected, dim=0).cuda()
         obj_cat_selected = torch.cat(obj_cat_selected, dim=0)
         scene_ids = np.concatenate(scene_ids, axis=0)
-        diff_dict = {'box': box_selected[:self.diffusion_bs], 'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'rel_b': c_rel_b_selected[:self.diffusion_bs],
+        diff_dict = {'box': box_selected[:self.diffusion_bs], 'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'c_b': c_rel_b_selected[:self.diffusion_bs],
                      "scene_ids": scene_ids[:self.diffusion_bs]}
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 

@@ -516,7 +516,50 @@ def get_rotation_3dfront(y, degree=True):
     return rot
 
 
-def normalize_box_params(box_params, params=7, file=None, scale=3):
+def scale_box_params(box_params, file=None, angle=False):
+    assert file is not None
+    stats = np.loadtxt(file)
+    min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
+    box_params[:3] = (box_params[:3] - min_lhw) / (max_lhw - min_lhw) # size
+    box_params[3:6] = (box_params[3:6] - min_xyz) / (max_xyz - min_xyz) # loc
+    if angle:
+        box_params[6:7] = (box_params[6:7] - min_angle) / (max_angle - min_angle) # angle
+
+    return box_params
+
+def preprocess_angle2sincos(angle):
+    if isinstance(angle,np.ndarray):
+        return np.concatenate((np.sin(angle),np.cos(angle)),axis=-1)
+    elif isinstance(angle,torch.Tensor):
+        return torch.concat((torch.sin(angle), torch.cos(angle)), dim=-1)
+    else:
+        raise NotImplementedError
+
+def descale_box_params(normed_box_params, file=None, angle=False):
+    assert file is not None
+    stats = np.loadtxt(file)
+    if isinstance(normed_box_params,torch.Tensor):
+        stats = torch.tensor(stats,dtype=normed_box_params.dtype, device=normed_box_params.device)
+    min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
+    normed_box_params[:,:3] = normed_box_params[:,:3] * (max_lhw - min_lhw) + min_lhw # size
+    normed_box_params[:,3:6] = normed_box_params[:,3:6] * (max_xyz - min_xyz) + min_xyz # loc
+    if angle:
+        normed_box_params[:,6:7] = normed_box_params[:,6:7] * (max_angle - min_angle) + min_angle  # angle
+
+    return normed_box_params
+
+def postprocess_sincos2arctan(sincos):
+    if isinstance(sincos, np.ndarray):
+        assert sincos.shape[1] == 2
+        return np.arctan2(sincos[0],sincos[1])
+    elif isinstance(sincos,torch.Tensor):
+        B, N = sincos.shape
+        assert N == 2
+        return torch.arctan2(sincos[:,0], sincos[:,1]).reshape(B,1)
+    else:
+        raise NotImplementedError
+
+def standardize_box_params(box_params, params=7, file=None, scale=3):
     """ Normalize the box parameters for more stable learning utilizing the accumulated dataset statistics
 
     :param box_params: float array of shape [7] containing the box parameters
@@ -539,7 +582,7 @@ def normalize_box_params(box_params, params=7, file=None, scale=3):
     return scale * ((box_params - mean) / std)
 
 
-def denormalize_box_params(box_params, file=None, scale=3, params=7):
+def destandardize_box_params(box_params, file=None, scale=3, params=7):
     """ Denormalize the box parameters utilizing the accumulated dataset statistics
 
     :param box_params: float array of shape [params] containing the box parameters
@@ -566,7 +609,7 @@ def denormalize_box_params(box_params, file=None, scale=3, params=7):
     return (box_params * std) / scale + mean
 
 
-def batch_torch_denormalize_box_params(box_params, file=None, scale=3, params=7):
+def batch_torch_destandardize_box_params(box_params, file=None, scale=3, params=7):
     """ Denormalize the box parameters utilizing the accumulated dataset statistics
 
     :param box_params: float tensor of shape [N, 6] containing the 6 box parameters, where N is the number of boxes

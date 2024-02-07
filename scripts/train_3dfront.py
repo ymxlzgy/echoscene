@@ -284,7 +284,7 @@ def train():
             writer.add_scalar("learning_rate", current_lr, counter)
 
             if counter % 50 == 0:
-                message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.4f}".format( counter, layout_loss, shape_loss, current_lr)
+                message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.6f}".format( counter, layout_loss, shape_loss, current_lr)
                 if args.network_type == 'cs++':
                     loss_diff = model.diff.ShapeDiff.get_current_errors()
                     for k, v in loss_diff.items():
@@ -301,7 +301,7 @@ def train():
             # t = (time.time() - iter_start_time) / args.batchSize
             # loss_diff = model.diff.ShapeDiff.get_current_errors()
             # model.diff.visualizer.print_current_errors(writer, counter, loss_diff, t)
-            if counter % 1000 == 0 and obj_selected is not None:
+            if counter % 10000 == 0 and obj_selected is not None:
                 model.diff.ShapeDiff.gen_shape_after_foward(num_obj=args.vis_num)
                 model.diff.visualizer.display_current_results(writer, model.diff.ShapeDiff.get_current_visuals(
                     dataset.classes_r, obj_selected.detach().cpu().numpy(), num_obj=args.vis_num),

@@ -20,9 +20,9 @@ layout_branch:
         class_dim: 25
         angle_dim: 1
         relation_condition: true
-        conditioning_key: crossattn
-        crossattn_dim: 1280
-        concat_dim: 0
+        conditioning_key: 'concat'
+        crossattn_dim: 0 #1280
+        concat_dim: 1280 #
         bbox_separate: true
 
     diffusion_kwargs:
@@ -30,7 +30,7 @@ layout_branch:
       beta_start: 0.0001
       beta_end: 0.02
       time_num: 1000
-      loss_type: 'mse'
+      loss_type: 'sdfusion'
       model_mean_type: 'eps'
       model_var_type: 'fixedsmall'
       loss_separate: true

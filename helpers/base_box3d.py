@@ -582,14 +582,16 @@ class BaseInstance3DBoxes:
 
         # 3d overlaps (volume, square*h)
         overlaps_3d = overlaps_bev.to(boxes1.device) * overlaps_h
+        if torch.isnan(overlaps_3d).any():
+            print('overlaps_3d is NaN, set to 0')
+            overlaps_3d = torch.zeros(len(overlaps_3d)).to(overlaps_3d.device)
 
         volume1 = boxes1.volume.view(-1, 1)
         volume2 = boxes2.volume.view(1, -1)
 
         if mode == 'iou':
             # the clamp func is used to avoid division of 0
-            iou3d = overlaps_3d / torch.clamp(
-                volume1 + volume2 - overlaps_3d, min=1e-8)
+            iou3d = overlaps_3d / torch.clamp(volume1 + volume2 - overlaps_3d, min=1e-8)
         else:
             iou3d = overlaps_3d / torch.clamp(volume1, min=1e-8)
 

@@ -197,7 +197,7 @@ class Sg2ScDiffModel(nn.Module):
         edges = torch.stack([s, o], dim=1)  # Shape is (T, 2)
 
         obj_embed = self.obj_embeddings_ec(objs) # TODO is obj_embeddings_ec enough here?
-        pred_embed = self.pred_embeddings_man_dc(p)
+        pred_embed = self.pred_embeddings_ec(p) # TODO is pred_embeddings_ec enough here?
         if self.clip:
             obj_embed = torch.cat([dec_text_feat, obj_embed], dim=1)
             pred_embed = torch.cat([dec_rel_feat, pred_embed], dim=1)
@@ -205,7 +205,7 @@ class Sg2ScDiffModel(nn.Module):
         obj_vecs_ = torch.cat([latent_f, obj_embed], dim=1)
         obj_vecs_, pred_vecs_ = self.gconv_net_manipulation(obj_vecs_, pred_embed, edges)
 
-        return obj_vecs_, pred_vecs_, obj_embed, pred_embed
+        return obj_embed, pred_embed, obj_vecs_, pred_vecs_
 
     # def decoder(self, z, objs, triples, dec_text_feat, dec_rel_feat, attributes, manipulate=False):
     #     s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
@@ -452,15 +452,15 @@ class Sg2ScDiffModel(nn.Module):
         obj_cat_selected = torch.cat(obj_cat_selected, dim=0)
         scene_ids = np.concatenate(scene_ids, axis=0)
         diff_dict = {'sdf': sdf_selected[:self.diffusion_bs], 'uc_s': uc_rel_s_selected[:self.diffusion_bs],
-                     'rel_s': c_rel_s_selected[:self.diffusion_bs], 'box': box_selected[:self.diffusion_bs],
-                     'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'rel_b': c_rel_b_selected[:self.diffusion_bs],
+                     'c_s': c_rel_s_selected[:self.diffusion_bs], 'box': box_selected[:self.diffusion_bs],
+                     'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'c_b': c_rel_b_selected[:self.diffusion_bs],
                      "scene_ids": scene_ids[:self.diffusion_bs]}
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
     def forward(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs, dec_objs_grained,
                 dec_triples, dec_boxes, dec_text_feat, dec_rel_feat, dec_objs_to_scene, missing_nodes, manipulated_nodes, dec_sdfs, dec_angles):
 
-        obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(enc_objs, enc_triples, enc_text_feat, enc_rel_feat)
+        obj_embed, _, latent_obj_vecs, latent_pred_vecs = self.init_encoder(enc_objs, enc_triples, enc_text_feat, enc_rel_feat)
 
         # append zero nodes
         nodes_added = []
@@ -483,7 +483,7 @@ class Sg2ScDiffModel(nn.Module):
             change_repr.append(torch.from_numpy(noisechange).float().cuda())
         change_repr = torch.stack(change_repr, dim=0)
         latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
-        latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
+        obj_embed_, pred_embed_ , latent_obj_vecs_, pred_vecs_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
 
         if not self.replace_all_latent:
             # take original nodes when untouched
@@ -498,7 +498,7 @@ class Sg2ScDiffModel(nn.Module):
         if self.s_l_separated:
             c_rel_feat_s, _ = self.shape_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
             c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
-        uc_rel_feat_s = self.rel_s_mlp(obj_embed_)
+        uc_rel_feat_s = self.rel_s_mlp(obj_embed_) # embedding + CLIP
         uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
         uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
         uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
@@ -509,10 +509,7 @@ class Sg2ScDiffModel(nn.Module):
         c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
         obj_selected, diff_dict = self.select_sdfs_boxes(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_sdfs, dec_boxes, dec_angles, uc_rel_feat_s, c_rel_feat_s, uc_rel_feat_b, c_rel_feat_b, random=False)
-        # if False:
-        #     id_ = torch.where(dec_objs==31)
-        #     obj_selected = torch.tensor([31]).to(torch.int64)
-        #     diff_dict = {'sdf': dec_sdfs[id_],'rel':c_rel_feat[id_],'uc':uc_rel_feat[id_]}
+
         self.ShapeDiff.set_input(diff_dict)
         self.ShapeDiff.set_requires_grad([self.ShapeDiff.df], requires_grad=True)
         Shape_loss, Shape_loss_dict = self.ShapeDiff.forward()
