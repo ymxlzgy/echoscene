@@ -45,7 +45,6 @@ layout_branch:
       loss_separate: true
       loss_iou: false
       iou_type: obb
-      norm_type: 'bounds' # individual_bounds
       train_stats_file: None
 misc:
     debug: 0

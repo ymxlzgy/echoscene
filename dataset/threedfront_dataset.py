@@ -390,7 +390,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 if self.use_scene_rels:
                     ordered_feats.append(clip_feats_ins[-1][np.newaxis,:]) # should be room's feature
                 clip_feats_ins = list(np.concatenate(ordered_feats, axis=0))
-                clip_feats_rel = clip_feats_dic['rel_feats'][:len(words)]
+                clip_feats_rel = clip_feats_dic['rel_feats']
 
         output = {}
         # if features are requested but the files don't exist, we run all loaded cats and triples through clip
