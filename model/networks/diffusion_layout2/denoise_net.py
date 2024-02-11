@@ -4,7 +4,7 @@ from abc import abstractmethod
 from functools import partial
 import math
 from typing import Iterable
-
+from model.graph import GraphTripleConvNet, _init_weights, make_mlp
 import numpy as np
 
 import torch
@@ -710,6 +710,25 @@ class UNet1DModel(nn.Module):
             zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
 
+        # GCN part
+        gconv_dim = 64
+        gconv_hidden_dim = gconv_dim * 4
+        add_dim = 512
+        self.pred_embeddings = nn.Embedding(16, gconv_dim * 2)
+        self.box_embeddings = nn.Linear(in_channels, gconv_dim)
+        self.box_embeddings.apply(_init_weights)
+        gconv_kwargs_box = {
+            'input_dim_obj': gconv_dim * 2 + add_dim + gconv_dim,
+            'input_dim_pred': gconv_dim * 2,
+            'hidden_dim': gconv_hidden_dim,
+            'pooling': 'avg',
+            'num_layers': 5,
+            'mlp_normalization': 'batch',
+            'residual': True,
+            'output_dim': concat_dim
+        }
+        self.box_graph_cov = GraphTripleConvNet(**gconv_kwargs_box)
+
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -726,7 +745,18 @@ class UNet1DModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps=None, context=None,**kwargs):
+    def box_messsage_passing(self, obj_embed, triples, box_t):
+        s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
+        s, p, o = [i.squeeze(1) for i in [s, p, o]]  # Now have shape (T,)
+        edges = torch.stack([s, o], dim=1)  # Shape is (T, 2)
+
+        box_embed = self.box_embeddings(box_t)
+        pred_embed = self.pred_embeddings(p)
+        obj_box_embed = torch.cat([obj_embed, box_embed], dim=1)
+        box_rel_embed, _ = self.box_graph_cov(obj_box_embed,pred_embed,edges)
+        return box_rel_embed
+
+    def forward(self, box_t, obj_embed, triples, timesteps=None, context=None,**kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -735,14 +765,20 @@ class UNet1DModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+        latent_box_rel = self.box_messsage_passing(obj_embed, triples, box_t)
+        box_t, latent_box_rel = box_t.unsqueeze(1), latent_box_rel.unsqueeze(1)
+        if self.conditioning_key in ['concat','hybrid']:
+            box_t = torch.cat([box_t, latent_box_rel], dim=-1)
+        elif self.conditioning_key in ['crossattn','hybrid']:
+            context = latent_box_rel
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
         # import pdb; pdb.set_trace()
         # h = x.type(self.dtype)
-        x = torch.permute(x, (0, 2, 1))
-        h = x
+        box_t = torch.permute(box_t, (0, 2, 1))
+        h = box_t
         # print(h.type)
         for module in self.input_blocks:
             h = module(h, emb, context)

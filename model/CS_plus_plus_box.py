@@ -92,28 +92,28 @@ class Sg2BoxDiffModel(nn.Module):
 
         ## layout branch
         self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg)
-        l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
-        rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
-        if self.LayoutDiff.df.model.conditioning_key == 'concat':
-            l_concat_dim = self.diff_cfg.layout_branch.denoiser_kwargs.concat_dim
-            rel_l_layers = [gconv_dim * 2 + add_dim, 1280, l_concat_dim]
-        self.rel_l_mlp = make_mlp(rel_l_layers, batch_norm=mlp_normalization, norelu=True)
-
-        # initialization
-        self.rel_l_mlp.apply(_init_weights)
+        # l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
+        # rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
+        # if self.LayoutDiff.df.model.conditioning_key == 'concat':
+        #     l_concat_dim = self.diff_cfg.layout_branch.denoiser_kwargs.concat_dim
+        #     rel_l_layers = [gconv_dim * 2 + add_dim, 1280, l_concat_dim]
+        # self.rel_l_mlp = make_mlp(rel_l_layers, batch_norm=mlp_normalization, norelu=True)
+        #
+        # # initialization
+        # self.rel_l_mlp.apply(_init_weights)
         self.lr_init = 1e-4
 
-    # 0-20k->20k-60k->60k-120k->120k-
+    # 0-35k->35k-70k->70k-140k->140k-
     # 1e-4 -> 5e-5 -> 1e-5 -> 5e-6
     def lr_lambda(self, counter):
-        # 20000
-        if counter < 20000:
+        # 35000
+        if counter < 35000:
             return 1.0
-        # 60000
-        elif counter < 60000:
+        # 85000
+        elif counter < 70000:
             return 5e-5 / self.lr_init
-        # 100000
-        elif counter < 120000:
+        # 120000
+        elif counter < 140000:
             return 1e-5 / self.lr_init
         else:
             return 5e-6 / self.lr_init
@@ -356,6 +356,12 @@ class Sg2BoxDiffModel(nn.Module):
                      "scene_ids": scene_ids[:self.diffusion_bs]}
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
+    def prepare_input(self, obj_cats, triples, obj_boxes, obj_angles, self_cond, relation_cond, scene_ids):
+        obj_boxes = torch.cat((obj_boxes, obj_angles.reshape(-1,1)), dim=-1)
+        diff_dict = {'preds': triples, 'box': obj_boxes, 'uc_b': self_cond,
+                     'c_b': relation_cond, "obj_id_to_scene": scene_ids}
+        return diff_dict
+
     def forward(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs, dec_objs_grained,
                 dec_triples, dec_boxes, dec_text_feat, dec_rel_feat, dec_objs_to_scene, missing_nodes, manipulated_nodes, dec_angles):
 
@@ -392,19 +398,20 @@ class Sg2BoxDiffModel(nn.Module):
         else:
             latent_obj_vecs = latent_obj_vecs_
 
-        # relation embeddings -> diffusion
-        c_rel_feat_b = latent_obj_vecs
-        if self.s_l_separated:
-            c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
-        uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
-        uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+        ## relation embeddings -> diffusion
+        # c_rel_feat_b = latent_obj_vecs
+        # if self.s_l_separated:
+        #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
+        # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
+        # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+        #
+        # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
+        # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
-        c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
-        c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
+        # obj_selected, diff_dict = self.select_boxes(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_boxes, dec_angles, uc_rel_feat_b, c_rel_feat_b, random=False)
+        box_diff_dict = self.prepare_input(dec_objs, dec_triples, dec_boxes, dec_angles, self_cond=obj_embed_, relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
 
-        obj_selected, diff_dict = self.select_boxes(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_boxes, dec_angles, uc_rel_feat_b, c_rel_feat_b, random=False)
-
-        self.LayoutDiff.set_input(diff_dict, max_sample=None)
+        self.LayoutDiff.set_input(box_diff_dict)
         self.LayoutDiff.set_requires_grad([self.LayoutDiff.df], requires_grad=True)
         Layout_loss, Layout_loss_dict = self.LayoutDiff.forward()
 

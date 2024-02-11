@@ -1,5 +1,5 @@
 hyper:
-    batch_size: 32
+    batch_size: 128
     gpu_ids: 0
     logs_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
     results_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
@@ -29,7 +29,7 @@ layout_branch:
         # cond_model params
         use_spatial_transformer: true
         transformer_depth: 1
-        conditioning_key: 'hybrid'
+        conditioning_key: 'crossattn'
         concat_dim: 1280
         crossattn_dim: 1280
         use_checkpoint: true

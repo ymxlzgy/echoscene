@@ -521,9 +521,13 @@ def scale_box_params(box_params, file=None, angle=False):
     stats = np.loadtxt(file)
     min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
     box_params[:3] = (box_params[:3] - min_lhw) / (max_lhw - min_lhw) # size
+    box_params[:3] = 2 * box_params[:3]-1
+
     box_params[3:6] = (box_params[3:6] - min_xyz) / (max_xyz - min_xyz) # loc
+    box_params[3:6] = 2 * box_params[3:6] - 1
     if angle:
         box_params[6:7] = (box_params[6:7] - min_angle) / (max_angle - min_angle) # angle
+        box_params[6:7] = 2 * box_params[6:7] - 1
 
     return box_params
 
@@ -541,9 +545,13 @@ def descale_box_params(normed_box_params, file=None, angle=False):
     if isinstance(normed_box_params,torch.Tensor):
         stats = torch.tensor(stats,dtype=normed_box_params.dtype, device=normed_box_params.device)
     min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
+    normed_box_params[:,:3] = (normed_box_params[:,:3] + 1) / 2
     normed_box_params[:,:3] = normed_box_params[:,:3] * (max_lhw - min_lhw) + min_lhw # size
+
+    normed_box_params[:, 3:6] = (normed_box_params[:, 3:6] + 1) / 2
     normed_box_params[:,3:6] = normed_box_params[:,3:6] * (max_xyz - min_xyz) + min_xyz # loc
     if angle:
+        normed_box_params[:,6:7] = (normed_box_params[:,6:7] + 1) / 2
         normed_box_params[:,6:7] = normed_box_params[:,6:7] * (max_angle - min_angle) + min_angle  # angle
 
     return normed_box_params

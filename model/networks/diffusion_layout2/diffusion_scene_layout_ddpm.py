@@ -74,18 +74,13 @@ class DiffusionSceneLayout_DDPM(Module):
                 for param in net.parameters():
                     param.requires_grad = requires_grad
 
-    def set_input(self, data_dict, max_sample):
+    def set_input(self, data_dict):
         self.x = data_dict['box']
-        self.scene_ids = data_dict['scene_ids']
+        B, D = self.x.shape
+        self.preds = data_dict['preds']
+        self.scene_ids = data_dict['obj_id_to_scene']
         self.rel = data_dict['c_b']
-        B = self.x.shape[0]
         self.uc_rel = data_dict['uc_b']
-
-        if max_sample is not None:
-            self.x = self.x[:max_sample]
-            self.rel =self.rel[:max_sample]
-            self.rel = self.rel[:max_sample]
-            self.uc_rel = self.uc_rel[:max_sample]
 
         vars_list = ['x']
 
@@ -102,15 +97,15 @@ class DiffusionSceneLayout_DDPM(Module):
         rel = self.rel
         uc_rel = self.uc_rel
         target_box = self.x
+        triples = self.preds
 
         # Compute the loss
-        self.loss, self.loss_dict = self.get_loss(uc_rel, rel, target_box)
+        self.loss, self.loss_dict = self.get_loss(obj_embed=uc_rel, obj_triples=triples, target_box=target_box, rel=rel)
         return self.loss, self.loss_dict
 
-    def get_loss(self, uc_rel, rel, target_box):
+    def get_loss(self, obj_embed, obj_triples, target_box, rel):
         # Unpack the sample_params
-        batch_size, len_params = target_box.shape
-        condition = uc_rel
+        batch_size, D_params = target_box.shape
         if self.text_condition:
             raise NotImplementedError # use text embed for cross attention
         elif self.rel_condition:
@@ -118,17 +113,7 @@ class DiffusionSceneLayout_DDPM(Module):
         else:
             raise NotImplementedError
 
-        # if target_box.shape[0] == 1:
-        #     num_repeat = 32
-        #     room_layout_target = target_box.repeat(num_repeat, 1, 1)
-        #     if condition is not None:
-        #         condition = condition.repeat(num_repeat, 1, 1)
-        #     if condition_cross is not None:
-        #         condition_cross = condition_cross.repeat(num_repeat, 1, 1)
-
-        # denoise loss function
-
-        loss, loss_dict = self.df.get_loss_iter(target_box, scene_ids=self.scene_ids, condition=condition, condition_cross=condition_cross)
+        loss, loss_dict = self.df.get_loss_iter(obj_embed, obj_triples, target_box, scene_ids=self.scene_ids, condition_cross=condition_cross)
 
         return loss, loss_dict
 

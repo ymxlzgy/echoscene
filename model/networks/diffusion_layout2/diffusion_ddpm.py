@@ -444,7 +444,7 @@ class GaussianDiffusion:
             'loss.bbox_iou': bbox_iou_valid.mean(),
         }
 
-    def p_losses(self, denoise_fn, data_start, t, condition=None, condition_cross=None, scene_ids=None):
+    def p_losses(self, denoise_fn, data_start, obj_embed, triples, t, condition_cross=None, scene_ids=None):
         """
         Training loss calculation
         """
@@ -467,7 +467,7 @@ class GaussianDiffusion:
         else:
             raise NotImplementedError
         # predict the noise instead of x_start. seems to be weighted naturally like SNR
-        denoise_out = denoise_fn(data_t, t, condition, condition_cross)
+        denoise_out = denoise_fn(data_t, obj_embed, triples, t, condition_cross)
         assert data_t.shape == data_start.shape
         assert denoise_out.shape == data_start.shape
         if self.loss_type == 'diffuscene':
@@ -559,37 +559,38 @@ class DiffusionPoint(nn.Module):
         }
 
 
-    def _denoise(self, data, t, condition, condition_cross):
+    def _denoise(self, data, obj_embed, triples, t, condition_cross):
         B, D = data.shape
         assert data.dtype == torch.float
         assert t.shape == torch.Size([B]) and t.dtype == torch.int64
-        data = data.unsqueeze(1)
+        # data = data.unsqueeze(1)
         if self.model.conditioning_key == 'concat':
-            xc = torch.cat([data, condition], dim=2)
-            out = self.model(xc, t)
+            out = self.model(data, obj_embed, triples, t)
         elif self.model.conditioning_key == 'crossattn':
-            out = self.model(data, t, context=condition_cross)
-        elif self.model.conditioning_key == 'hybrid':
-            xc = torch.cat([data, condition], dim=2)
-            out = self.model(xc, t, context=condition_cross)
+            out = self.model(data, obj_embed, triples, t, context=condition_cross)
+        # elif self.model.conditioning_key == 'hybrid':
+        #     out = self.model(data, condition, t, context=condition_cross)
         out = out.squeeze(-1)
 
         assert out.shape == torch.Size([B, D])
         return out
 
-    def get_loss_iter(self, data, scene_ids=None, condition=None, condition_cross=None):
+    def get_loss_iter(self, obj_embed, preds, data, scene_ids=None, condition_cross=None):
         B, _ = data.shape
 
-        if self.diffusion.loss_iou:
-            unique_scenes, inv_idx = np.unique(scene_ids, return_inverse=True)
-            t = torch.randint(0, self.diffusion.num_timesteps, size=unique_scenes.shape, device=data.device) # we want to have different t for each scene not each obj
-            t = t[inv_idx]
-        else:
-            t = torch.randint(0, self.diffusion.num_timesteps, size=(B,), device=data.device)
+        # if self.diffusion.loss_iou:
+        #     unique_scenes, inv_idx = np.unique(scene_ids, return_inverse=True)
+        #     t = torch.randint(0, self.diffusion.num_timesteps, size=unique_scenes.shape, device=data.device) # we want to have different t for each scene not each obj
+        #     t = t[inv_idx]
+        # else:
+        #     t = torch.randint(0, self.diffusion.num_timesteps, size=(B,), device=data.device)
+        unique_scenes, inv_idx = np.unique(scene_ids, return_inverse=True)
+        t = torch.randint(0, self.diffusion.num_timesteps, size=unique_scenes.shape,
+                          device=data.device)  # we want to have different t for each scene not each obj
+        t = t[inv_idx]
         assert len(t) == B
 
-        loss, loss_dict = self.diffusion.p_losses(
-            denoise_fn=self._denoise, data_start=data, t=t, condition=condition, condition_cross=condition_cross, scene_ids=scene_ids)
+        loss, loss_dict = self.diffusion.p_losses(self._denoise, data, obj_embed, triples=preds, t=t, condition_cross=condition_cross, scene_ids=scene_ids)
         assert t.shape == torch.Size([B])
         return loss, loss_dict
     

@@ -309,7 +309,7 @@ def train():
 
 
 
-        if epoch % 15 == 0:
+        if epoch % 100 == 0:
             model.save(args.exp, args.outf, epoch, counter=counter)
             print('saved model_{}'.format(epoch))
 
