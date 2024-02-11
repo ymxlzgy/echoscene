@@ -45,7 +45,8 @@ layout_branch:
       loss_separate: true
       loss_iou: false
       iou_type: obb
-      train_stats_file: /media/ymxlzgy/Data/Dataset/FRONT/centered_bounds_all_trainval.txt
+      norm_type: 'bounds' # individual_bounds
+      train_stats_file: None
 misc:
     debug: 0
     seed: 111

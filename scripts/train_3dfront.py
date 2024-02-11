@@ -10,6 +10,7 @@ import torch.utils.data
 import sys
 import time
 from tqdm import tqdm
+from omegaconf import OmegaConf
 sys.path.append('../')
 from dataset.threedfront_dataset import ThreedFrontDatasetSceneGraph
 from model.SGDiff import SGDiff
@@ -201,8 +202,12 @@ def train():
         os.makedirs(args.outf)
     except OSError:
         pass
+
     # instantiate the model
-    model = SGDiff(type=args.network_type, diff_opt=args.diff_yaml, vocab=dataset.vocab,
+    diff_cfg = OmegaConf.load(args.diff_yaml)
+    diff_cfg.layout_branch.diffusion_kwargs.train_stats_file = dataset.box_normalized_stats
+
+    model = SGDiff(type=args.network_type, diff_opt=diff_cfg, vocab=dataset.vocab,
                 replace_latent=args.replace_latent, with_changes=args.with_changes, residual=args.residual,
                 gconv_pooling=args.pooling, with_angles=args.with_angles, clip=args.with_CLIP, separated=args.separated)
 

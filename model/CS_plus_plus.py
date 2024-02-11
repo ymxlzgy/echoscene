@@ -3,7 +3,6 @@ import random
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from omegaconf import OmegaConf
 from model.graph import GraphTripleConvNet, _init_weights, make_mlp
 from model.networks.diffusion_shape.sdfusion_txt2shape_model import SDFusionText2ShapeModel
 from model.networks.diffusion_shape.diff_utils.visualizer import Visualizer
@@ -80,7 +79,7 @@ class Sg2ScDiffModel(nn.Module):
         self.gconv_net_ec = GraphTripleConvNet(**gconv_kwargs_ec)
         self.gconv_net_manipulation = GraphTripleConvNet(**gconv_kwargs_manipulation)
 
-        self.diff_cfg = OmegaConf.load(diff_opt)
+        self.diff_cfg = diff_opt
         self.diffusion_bs = diffusion_bs if self.diff_cfg.hyper.batch_size is None else self.diff_cfg.hyper.batch_size
         self.s_l_separated = separated
         if self.s_l_separated:

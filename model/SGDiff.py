@@ -12,7 +12,7 @@ from termcolor import colored
 
 class SGDiff(nn.Module):
 
-    def __init__(self, type='cs++', diff_opt = '../config/v2_full.yaml', vocab=None, replace_latent=False, with_changes=True,
+    def __init__(self, type, diff_opt, vocab, replace_latent=False, with_changes=True,
                  residual=False, gconv_pooling='avg', with_angles=False, clip=True, separated=False):
         super().__init__()
         assert type in ['cs++', 'cs++_l'], '{} is not included'.format(type)
