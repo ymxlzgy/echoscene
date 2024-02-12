@@ -57,8 +57,7 @@ class SGDiff(nn.Module):
         return obj_selected, shape_loss, layout_loss, loss_dict
 
     def load_networks(self, exp, epoch, strict=True, restart_optim=False):
-        from omegaconf import OmegaConf
-        diff_cfg = OmegaConf.load(self.diff_opt)
+        diff_cfg = self.diff_opt
         ckpt = torch.load(os.path.join(exp, 'checkpoint', 'model{}.pth'.format(epoch)))
         diff_state_dict = {}
         diff_state_dict['opt'] = ckpt.pop('opt')
@@ -91,7 +90,6 @@ class SGDiff(nn.Module):
                                                                                     'model{}.pth'.format(epoch)),
                       'blue'))
 
-
         if not restart_optim:
             import torch.optim as optim
             self.diff.optimizerFULL.load_state_dict(diff_state_dict['opt'])
@@ -99,74 +97,77 @@ class SGDiff(nn.Module):
             self.diff.scheduler = optim.lr_scheduler.LambdaLR(self.diff.optimizerFULL, lr_lambda=self.diff.lr_lambda,
                                                     last_epoch=int(self.counter - 1))
 
-    def decoder_with_changes_boxes_and_shape(self, z_box, z_shape, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, box_data=None, gen_shape=False):
+    # def decoder_with_changes_boxes_and_shape(self, z_box, z_shape, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes, box_data=None, gen_shape=False):
+    #
+    #     if self.type_ == 'cs++':
+    #         boxes, sdfs, keep = self.diff.decoder_with_changes(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
+    #                                                            manipulated_nodes, gen_shape=gen_shape)
+    #         return boxes, sdfs, keep
+    #     else:
+    #         raise NotImplementedError
 
-        if self.type_ == 'cs++':
-            boxes, sdfs, keep = self.diff.decoder_with_changes(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
-                                                               manipulated_nodes, gen_shape=gen_shape)
-            return boxes, sdfs, keep
-        else:
-            raise NotImplementedError
+    # def decoder_with_changes_boxes(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes):
+    #     if self.type_ == 'cs++_l':
+    #         return self.vae_box.decoder_with_changes(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes)
+    #     else:
+    #         raise NotImplementedError
 
-    def decoder_with_changes_boxes(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes):
+    # def decoder_boxes(self, z, objs, triples, attributes):
+    #     if self.type_ == 'cs++_l':
+    #         if self.with_angles:
+    #             return self.vae_box.decoder(z, objs, triples, attributes)
+    #         else:
+    #             return self.vae_box.decoder(z, objs, triples, attributes), None
+
+    # def decoder_with_additions_boxes_and_shape(self, z_box, z_shape, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
+    #                                            manipulated_nodes, gen_shape=False):
+    #     if self.type_ == 'cs++_l':
+    #         boxes, keep = self.decoder_with_additions_boxs(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes,
+    #                                                             manipulated_nodes)
+    #         return boxes, None, keep
+    #     elif self.type_ == 'cs++':
+    #         boxes, sdfs, keep = self.diff.decoder_with_additions(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
+    #                                                      manipulated_nodes, gen_shape=gen_shape)
+    #         return boxes, sdfs, keep
+    #     else:
+    #         raise NotImplementedError
+
+    # def decoder_with_additions_boxs(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes):
+    #     boxes, angles, keep = None, None, None
+    #     if self.type_ == 'cs++_l':
+    #         boxes, keep = self.vae_box.decoder_with_additions(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes,
+    #                                                         manipulated_nodes, (self.mean_est_box, self.cov_est_box))
+    #     else:
+    #         raise NotImplementedError
+    #     return boxes, angles, keep
+
+    # def encode_box_and_shape(self, objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, feats, boxes, angles=None, attributes=None):
+    #     if not self.with_angles:
+    #         angles = None
+    #     if self.type_ == 'cs++_l' or self.type_ == 'cs++':
+    #         return self.encode_box(objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, boxes, angles, attributes), (None, None)
+    #     else:
+    #         raise NotImplementedError
+
+    # def encode_box(self, objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, boxes, angles=None, attributes=None):
+    #
+    #     if self.type_ == 'cs++_l':
+    #         z, log_var = self.vae_box.encoder(objs, triples, boxes, attributes, encoded_enc_text_feat, encoded_enc_rel_feat, angles)
+    #     elif self.type_ == 'cs++':
+    #         z, log_var = self.diff.encoder(objs, triples, boxes, attributes, encoded_enc_text_feat,
+    #                                           encoded_enc_rel_feat, angles)
+    #     else:
+    #         raise NotImplementedError
+    #
+    #     return z, log_var
+
+    def sample_box_and_shape(self, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=False):
         if self.type_ == 'cs++_l':
-            return self.vae_box.decoder_with_changes(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes)
-        else:
-            raise NotImplementedError
-
-    def decoder_boxes(self, z, objs, triples, attributes):
-        if self.type_ == 'cs++_l':
-            if self.with_angles:
-                return self.vae_box.decoder(z, objs, triples, attributes)
-            else:
-                return self.vae_box.decoder(z, objs, triples, attributes), None
-
-    def decoder_with_additions_boxes_and_shape(self, z_box, z_shape, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
-                                               manipulated_nodes, gen_shape=False):
-        if self.type_ == 'cs++_l':
-            boxes, keep = self.decoder_with_additions_boxs(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes,
-                                                                manipulated_nodes)
-            return boxes, None, keep
+            layout_dict = self.diff.sampleBoxes(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
+            return layout_dict
         elif self.type_ == 'cs++':
-            boxes, sdfs, keep = self.diff.decoder_with_additions(z_box, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,
-                                                         manipulated_nodes, gen_shape=gen_shape)
-            return boxes, sdfs, keep
-        else:
-            raise NotImplementedError
-
-    def decoder_with_additions_boxs(self, z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes, manipulated_nodes):
-        boxes, angles, keep = None, None, None
-        if self.type_ == 'cs++_l':
-            boxes, keep = self.vae_box.decoder_with_additions(z, objs, triples, encoded_dec_text_feat, encoded_dec_rel_feat, attributes, missing_nodes,
-                                                            manipulated_nodes, (self.mean_est_box, self.cov_est_box))
-        else:
-            raise NotImplementedError
-        return boxes, angles, keep
-
-    def encode_box_and_shape(self, objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, feats, boxes, angles=None, attributes=None):
-        if not self.with_angles:
-            angles = None
-        if self.type_ == 'cs++_l' or self.type_ == 'cs++':
-            return self.encode_box(objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, boxes, angles, attributes), (None, None)
-        else:
-            raise NotImplementedError
-
-    def encode_box(self, objs, triples, encoded_enc_text_feat, encoded_enc_rel_feat, boxes, angles=None, attributes=None):
-
-        if self.type_ == 'cs++_l':
-            z, log_var = self.vae_box.encoder(objs, triples, boxes, attributes, encoded_enc_text_feat, encoded_enc_rel_feat, angles)
-        elif self.type_ == 'cs++':
-            z, log_var = self.diff.encoder(objs, triples, boxes, attributes, encoded_enc_text_feat,
-                                              encoded_enc_rel_feat, angles)
-        else:
-            raise NotImplementedError
-
-        return z, log_var
-
-    def sample_box_and_shape(self, point_classes_idx, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=False):
-        if self.type_ == 'cs++_l':
-            return self.diff.sample(point_classes_idx, self.mean_est, self.cov_est, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
-                                   attributes, gen_shape=gen_shape)
+            shape_dict, layout_dict = self.diff.sample(dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
+            return {**shape_dict, **layout_dict}
         else:
             raise NotImplementedError
 

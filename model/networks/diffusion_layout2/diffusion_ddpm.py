@@ -217,9 +217,9 @@ class GaussianDiffusion:
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
 
-    def p_mean_variance(self, denoise_fn, data, t, condition, condition_cross, clip_denoised: bool, return_pred_xstart: bool):
+    def p_mean_variance(self, denoise_fn, data, t, obj_embed, triples, condition, clip_denoised: bool, return_pred_xstart: bool):
 
-        model_output = denoise_fn(data, t, condition, condition_cross)
+        model_output = denoise_fn(data, obj_embed, triples, timesteps=t, context=condition)
 
 
         if self.model_var_type in ['fixedsmall', 'fixedlarge']:
@@ -293,6 +293,21 @@ class GaussianDiffusion:
         assert sample.shape == pred_xstart.shape
         return (sample, pred_xstart) if return_pred_xstart else sample
 
+    def p_sample_sg(self, denoise_fn, data, t, obj_embed, triples, condition, noise_fn, clip_denoised=False, return_pred_xstart=False):
+        """
+        Sample from the model
+        """
+        model_mean, _, model_log_variance, pred_xstart = self.p_mean_variance(denoise_fn, data=data, t=t, obj_embed=obj_embed, triples=triples, condition=condition, clip_denoised=clip_denoised,
+                                                                 return_pred_xstart=True)
+        noise = noise_fn(size=data.shape, dtype=data.dtype, device=data.device)
+        assert noise.shape == data.shape
+        # no noise when t == 0
+        nonzero_mask = torch.reshape(1 - (t == 0).float(), [data.shape[0]] + [1] * (len(data.shape) - 1))
+
+        sample = model_mean + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
+        assert sample.shape == pred_xstart.shape
+        return (sample, pred_xstart) if return_pred_xstart else sample
+
 
     def p_sample_loop(self, denoise_fn, shape, device, condition, condition_cross,
                       noise_fn=torch.randn, clip_denoised=True, keep_running=False):
@@ -311,6 +326,23 @@ class GaussianDiffusion:
 
         assert img_t.shape == shape
         return img_t
+
+    def p_sample_loop_sg(self, denoise_fn, shape, device, obj_embed, triples, condition, noise_fn=torch.randn, clip_denoised=True, keep_running=False):
+        """
+        Generate samples
+        keep_running: True if we run 2 x num_timesteps, False if we just run num_timesteps
+
+        """
+
+        assert isinstance(shape, (tuple, list))
+        x_t = noise_fn(size=shape, dtype=torch.float, device=device)
+        for t in reversed(range(0, self.num_timesteps if not keep_running else len(self.betas))):
+            t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(t)
+            x_t = self.p_sample_sg(denoise_fn=denoise_fn, data=x_t, t=t_, obj_embed=obj_embed, triples=triples, condition=condition, noise_fn=noise_fn,
+                                  clip_denoised=clip_denoised, return_pred_xstart=False)
+
+        assert x_t.shape == shape
+        return x_t
 
     def p_sample_loop_trajectory(self, denoise_fn, shape, device, freq, condition, condition_cross,
                                  noise_fn=torch.randn,clip_denoised=True, keep_running=False):
@@ -568,6 +600,8 @@ class DiffusionPoint(nn.Module):
             out = self.model(data, obj_embed, triples, t)
         elif self.model.conditioning_key == 'crossattn':
             out = self.model(data, obj_embed, triples, t, context=condition_cross)
+        else:
+            raise NotImplementedError
         # elif self.model.conditioning_key == 'hybrid':
         #     out = self.model(data, condition, t, context=condition_cross)
         out = out.squeeze(-1)
@@ -601,8 +635,19 @@ class DiffusionPoint(nn.Module):
                                             clip_denoised=clip_denoised,
                                             keep_running=keep_running)
 
+    def gen_samples_sg(self, shape, device, obj_embed, triples=None, condition=None, noise_fn=torch.randn,
+                    clip_denoised=True, keep_running=False):
+        return self.diffusion.p_sample_loop_sg(self._denoise, shape=shape, device=device, obj_embed=obj_embed, triples=triples, condition=condition, noise_fn=noise_fn,
+                                            clip_denoised=clip_denoised, keep_running=keep_running)
+
     def gen_sample_traj(self, shape, device, freq, condition=None, condition_cross=None, noise_fn=torch.randn,
                     clip_denoised=True,keep_running=False):
         return self.diffusion.p_sample_loop_trajectory(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn, freq=freq,
+                                                       clip_denoised=clip_denoised,
+                                                       keep_running=keep_running)
+
+    def gen_sample_traj_sg(self, shape, device, freq, condition=None, triples=None, condition_cross=None, noise_fn=torch.randn,
+                    clip_denoised=True,keep_running=False):
+        return self.diffusion.p_sample_loop_trajectory_sg(self._denoise, shape=shape, device=device, condition=condition, triples=triples, condition_cross=condition_cross, noise_fn=noise_fn, freq=freq,
                                                        clip_denoised=clip_denoised,
                                                        keep_running=keep_running)

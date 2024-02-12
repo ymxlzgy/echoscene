@@ -194,10 +194,6 @@ def train():
         shuffle=True,
         num_workers=int(args.workers))
 
-    # number of object classes and relationship classes
-    num_classes = len(dataset.classes)
-    num_relationships = len(dataset.relationships) + 1
-
     try:
         os.makedirs(args.outf)
     except OSError:
@@ -206,7 +202,6 @@ def train():
     # instantiate the model
     diff_cfg = OmegaConf.load(args.diff_yaml)
     diff_cfg.layout_branch.diffusion_kwargs.train_stats_file = dataset.box_normalized_stats
-
     model = SGDiff(type=args.network_type, diff_opt=diff_cfg, vocab=dataset.vocab,
                 replace_latent=args.replace_latent, with_changes=args.with_changes, residual=args.residual,
                 gconv_pooling=args.pooling, with_angles=args.with_angles, clip=args.with_CLIP, separated=args.separated)

@@ -75,15 +75,19 @@ class DiffusionSceneLayout_DDPM(Module):
                     param.requires_grad = requires_grad
 
     def set_input(self, data_dict):
-        self.x = data_dict['box']
-        B, D = self.x.shape
+        vars_list = []
+        try:
+            self.x = data_dict['box']
+            self.scene_ids = data_dict['obj_id_to_scene']
+            B, D = self.x.shape
+            vars_list.append('x')
+        except:
+            print('inference mode, no gt boxes and scene ids')
+
         self.preds = data_dict['preds']
-        self.scene_ids = data_dict['obj_id_to_scene']
         self.rel = data_dict['c_b']
         self.uc_rel = data_dict['uc_b']
-
-        vars_list = ['x']
-
+        vars_list += ['preds', 'rel', 'uc_rel']
         self.tocuda(var_names=vars_list)
 
     def tocuda(self, var_names):
@@ -95,12 +99,12 @@ class DiffusionSceneLayout_DDPM(Module):
     def forward(self):
         self.df.train()
         rel = self.rel
-        uc_rel = self.uc_rel
+        obj_embed = self.uc_rel
         target_box = self.x
         triples = self.preds
 
         # Compute the loss
-        self.loss, self.loss_dict = self.get_loss(obj_embed=uc_rel, obj_triples=triples, target_box=target_box, rel=rel)
+        self.loss, self.loss_dict = self.get_loss(obj_embed=obj_embed, obj_triples=triples, target_box=target_box, rel=rel)
         return self.loss, self.loss_dict
 
     def get_loss(self, obj_embed, obj_triples, target_box, rel):
@@ -117,58 +121,10 @@ class DiffusionSceneLayout_DDPM(Module):
 
         return loss, loss_dict
 
-    def sample(self, room_mask, num_points, point_dim, batch_size=1, text=None, 
-               partial_boxes=None, input_boxes=None, ret_traj=False, ddim=False, clip_denoised=False, freq=40, batch_seeds=None, 
-                ):
-        device = room_mask.device
-        noise = torch.randn((batch_size, num_points, point_dim))#, device=room_mask.device)
+    def sample(self, box_dim, batch_size, obj_embed=None, obj_triples=None, text=None, rel=None, ret_traj=False, ddim=False, clip_denoised=False, freq=40, batch_seeds=None):
 
-        # get the latent feature of room_mask
-        if self.room_mask_condition:
-            room_layout_f = self.fc_room_f(self.feature_extractor(room_mask)) #(B, F)
-            
-        else:
-            room_layout_f = None
-
-        # process instance & class condition f
-        if self.instance_condition:
-            if self.learnable_embedding:
-                instance_indices = torch.arange(self.sample_num_points).long().to(device)[None, :].repeat(room_mask.size(0), 1)
-                instan_condition_f = self.positional_embedding[instance_indices, :]
-            else:
-                instance_label = torch.eye(self.sample_num_points).float().to(device)[None, ...].repeat(room_mask.size(0), 1, 1)
-                instan_condition_f = self.fc_instance_condition(instance_label) 
-        else:
-            instan_condition_f = None
-
-
-        # concat instance and class condition   
-        # concat room_layout_f and instan_class_f
-        if room_layout_f is not None and instan_condition_f is not None:
-            condition = torch.cat([room_layout_f[:, None, :].repeat(1, num_points, 1), instan_condition_f], dim=-1).contiguous()
-        elif room_layout_f is not None:
-            condition = room_layout_f[:, None, :].repeat(1, num_points, 1)
-        elif instan_condition_f is not None:
-            condition = instan_condition_f
-        else:
-            condition = None
-
-        # concat room_partial condition
-        if self.room_partial_condition:
-            partial_valid   = torch.ones((batch_size, self.partial_num_points, 1)).float().to(device)
-            ###partial_invalid = torch.ones((batch_size, num_points - self.partial_num_points, 1)).float().to(device)
-            partial_invalid = torch.zeros((batch_size, num_points - self.partial_num_points, 1)).float().to(device)
-            partial_mask    = torch.cat([ partial_valid, partial_invalid ], dim=1).contiguous()
-            partial_input   = input_boxes * partial_mask
-            partial_condition_f = self.fc_partial_condition(partial_input)
-            condition = torch.cat([condition, partial_condition_f], dim=-1).contiguous()
-
-        # concat  room_arrange condition
-        if self.room_arrange_condition:
-            arrange_input  = torch.cat([ input_boxes[:, :, self.translation_dim:self.translation_dim+self.size_dim], input_boxes[:, :, self.bbox_dim:] ], dim=-1).contiguous()
-            arrange_condition_f = self.fc_arrange_condition(arrange_input)
-            condition = torch.cat([condition, arrange_condition_f], dim=-1).contiguous()
-
+        noise_shape = (batch_size, box_dim)
+        condition = rel if self.rel_condition else None
 
         if self.text_condition:
             if self.text_glove_embedding:
@@ -184,51 +140,56 @@ class DiffusionSceneLayout_DDPM(Module):
                 condition_cross = self.fc_text_f( text_f )
         else:
             condition_cross = None
-            
-
-        print('unconditional / conditional generation sampling')
+            print('unconditional generation sampling')
         # reverse sampling
         if ret_traj:
-            samples = self.df.gen_sample_traj(noise.shape, room_mask.device, freq=freq, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
+            samples = self.df.gen_sample_traj_sg(noise_shape, obj_embed.device, obj_embed, obj_triples, freq=freq, condition=condition, clip_denoised=clip_denoised)
         else:
-            samples = self.df.gen_samples(noise.shape, room_mask.device, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
+            samples = self.df.gen_samples_sg(noise_shape, obj_embed.device, obj_embed, obj_triples, condition=condition, clip_denoised=clip_denoised)
         
         return samples
 
     @torch.no_grad()
-    def generate_layout(self, room_mask, num_points, point_dim, batch_size=1, text=None, ret_traj=False, ddim=False, clip_denoised=False, batch_seeds=None, device="cpu", keep_empty=False):
-        
-        samples = self.sample(room_mask, num_points, point_dim, batch_size, text=text, ret_traj=ret_traj, ddim=ddim, clip_denoised=clip_denoised, batch_seeds=batch_seeds)
-        
-        return self.delete_empty_from_network_samples(samples, device=device, keep_empty=keep_empty)
+    def generate_layout_sg(self, box_dim, text=None, ret_traj=False, ddim=False, clip_denoised=False, batch_seeds=None):
 
-    @torch.no_grad()
-    def generate_layout_progressive(self, room_mask, num_points, point_dim, batch_size=1, text=None, ret_traj=False, ddim=False, clip_denoised=False, batch_seeds=None, device="cpu", keep_empty=False, num_step=100):
+        rel = self.rel
+        obj_embed = self.uc_rel
+        triples = self.preds
+
+        samples = self.sample(box_dim, batch_size=len(obj_embed), obj_embed=obj_embed, obj_triples=triples, text=text, rel=rel, ret_traj=ret_traj, ddim=ddim, clip_denoised=clip_denoised, batch_seeds=batch_seeds)
+        samples_dict = {
+            "sizes": samples[:, 0:self.size_dim].contiguous(),
+            "translations": samples[:, self.size_dim:self.size_dim + self.translation_dim].contiguous(),
+            "angles": samples[:, self.size_dim + self.translation_dim:self.bbox_dim].contiguous(),
+        }
         
-        # output dictionary of sample trajectory & sample some key steps
-        samples_traj = self.sample(room_mask, num_points, point_dim, batch_size, text=text, ret_traj=ret_traj, ddim=ddim, clip_denoised=clip_denoised, batch_seeds=batch_seeds, freq=num_step)
-        boxes_traj = {}
+        return samples_dict
 
-        # delete the initial noisy
-        samples_traj = samples_traj[1:]
-
-        for i in range(len(samples_traj)):
-            samples = samples_traj[i]
-            k_time = num_step * i
-            boxes_traj[k_time] = self.delete_empty_from_network_samples(samples, device=device, keep_empty=keep_empty)
-        return boxes_traj
+    # @torch.no_grad()
+    # def generate_layout_progressive(self, room_mask, num_points, point_dim, batch_size=1, text=None, ret_traj=False, ddim=False, clip_denoised=False, batch_seeds=None, device="cpu", keep_empty=False, num_step=100):
+    #
+    #     # output dictionary of sample trajectory & sample some key steps
+    #     samples_traj = self.sample(room_mask, num_points, point_dim, batch_size, text=text, ret_traj=ret_traj, ddim=ddim, clip_denoised=clip_denoised, batch_seeds=batch_seeds, freq=num_step)
+    #     boxes_traj = {}
+    #
+    #     # delete the initial noisy
+    #     samples_traj = samples_traj[1:]
+    #
+    #     for i in range(len(samples_traj)):
+    #         samples = samples_traj[i]
+    #         k_time = num_step * i
+    #         boxes_traj[k_time] = self.delete_empty_from_network_samples(samples, device=device, keep_empty=keep_empty)
+    #     return boxes_traj
     
 
     @torch.no_grad()
     def delete_empty_from_network_samples(self, samples, device="cpu", keep_empty=False):
         
         samples_dict = {
-            "translations": samples[:, :, 0:self.translation_dim].contiguous(),
-            "sizes": samples[:, :,  self.translation_dim:self.translation_dim+self.size_dim].contiguous(),
-            "angles": samples[:, :, self.translation_dim+self.size_dim:self.bbox_dim].contiguous(),
+            "sizes": samples[:, :, 0:self.size_dim].contiguous(),
+            "translations": samples[:, :,  self.size_dim:self.size_dim+self.translation_dim].contiguous(),
+            "angles": samples[:, :, self.size_dim+self.translation_dim:self.bbox_dim].contiguous(),
         }
-        if self.objfeat_dim > 0:
-            samples_dict["objfeats"] = samples[:, :, self.bbox_dim+self.class_dim:self.bbox_dim+self.class_dim+self.objfeat_dim]
 
         #initilization
         boxes = {

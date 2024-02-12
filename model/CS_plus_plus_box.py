@@ -355,9 +355,10 @@ class Sg2BoxDiffModel(nn.Module):
                      "scene_ids": scene_ids[:self.diffusion_bs]}
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
-    def prepare_input(self, obj_cats, triples, obj_boxes, obj_angles, self_cond, relation_cond, scene_ids):
-        obj_boxes = torch.cat((obj_boxes, obj_angles.reshape(-1,1)), dim=-1)
-        diff_dict = {'preds': triples, 'box': obj_boxes, 'uc_b': self_cond,
+    def prepare_input(self, triples, obj_embed, relation_cond, scene_ids=None, obj_boxes=None, obj_angles=None):
+        if obj_boxes and obj_angles:
+            obj_boxes = torch.cat((obj_boxes, obj_angles.reshape(-1,1)), dim=-1)
+        diff_dict = {'preds': triples, 'box': obj_boxes, 'uc_b': obj_embed,
                      'c_b': relation_cond, "obj_id_to_scene": scene_ids}
         return diff_dict
 
@@ -408,7 +409,7 @@ class Sg2BoxDiffModel(nn.Module):
         # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
         # obj_selected, diff_dict = self.select_boxes(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_boxes, dec_angles, uc_rel_feat_b, c_rel_feat_b, random=False)
-        box_diff_dict = self.prepare_input(dec_objs, dec_triples, dec_boxes, dec_angles, self_cond=obj_embed_, relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
+        box_diff_dict = self.prepare_input(dec_triples, obj_embed_, obj_boxes=dec_boxes, obj_angles=dec_angles, relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
 
         self.LayoutDiff.set_input(box_diff_dict)
         self.LayoutDiff.set_requires_grad([self.LayoutDiff.df], requires_grad=True)
@@ -430,51 +431,53 @@ class Sg2BoxDiffModel(nn.Module):
         keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
         return mu, logvar, dec_man_enc_pred, keep
 
-    def sampleShape(self, point_classes_idx, point_ae, mean_est_shape, cov_est_shape, dec_objs, dec_triplets,
-                    attributes=None):
+    # def sampleShape(self, point_classes_idx, point_ae, mean_est_shape, cov_est_shape, dec_objs, dec_triplets,
+    #                 attributes=None):
+    #     with torch.no_grad():
+    #         z_shape = []
+    #         for idxz in dec_objs:
+    #             idxz = int(idxz.cpu())
+    #             if idxz in point_classes_idx:
+    #                 z_shape.append(torch.from_numpy(
+    #                     np.random.multivariate_normal(mean_est_shape[idxz], cov_est_shape[idxz], 1)).float().cuda())
+    #             else:
+    #                 z_shape.append(torch.from_numpy(np.random.multivariate_normal(mean_est_shape[-1],
+    #                                                                               cov_est_shape[-1],
+    #                                                                               1)).float().cuda())
+    #         z_shape = torch.cat(z_shape, 0)
+    #
+    #         dc_shapes = self.decoder(z_shape, dec_objs, dec_triplets, attributes)
+    #         points = point_ae.forward_inference_from_latent_space(dc_shapes, point_ae.get_grid())
+    #     return points, dc_shapes
+
+    def sampleBoxes(self, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat):
         with torch.no_grad():
-            z_shape = []
-            for idxz in dec_objs:
-                idxz = int(idxz.cpu())
-                if idxz in point_classes_idx:
-                    z_shape.append(torch.from_numpy(
-                        np.random.multivariate_normal(mean_est_shape[idxz], cov_est_shape[idxz], 1)).float().cuda())
-                else:
-                    z_shape.append(torch.from_numpy(np.random.multivariate_normal(mean_est_shape[-1],
-                                                                                  cov_est_shape[-1],
-                                                                                  1)).float().cuda())
-            z_shape = torch.cat(z_shape, 0)
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
+            change_repr = []
+            for i in range(len(latent_obj_vecs)):
+                noisechange = np.random.normal(0, 1, self.embedding_dim)
+                change_repr.append(torch.from_numpy(noisechange).float().cuda())
+            change_repr = torch.stack(change_repr, dim=0)
+            latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
+            latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat) # normal message passing
 
-            dc_shapes = self.decoder(z_shape, dec_objs, dec_triplets, attributes)
-            points = point_ae.forward_inference_from_latent_space(dc_shapes, point_ae.get_grid())
-        return points, dc_shapes
+            ## relation embeddings -> diffusion
+            # c_rel_feat_b = latent_obj_vecs_
+            # if self.s_l_separated:
+            #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs_, obj_embed_, pred_embed_, dec_triplets)
+            # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
+            # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+            #
+            # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
+            # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
-    def sampleBoxes(self, mean_est, cov_est, dec_objs, dec_triplets, attributes=None):
-        with torch.no_grad():
-            z = torch.from_numpy(
-            np.random.multivariate_normal(mean_est, cov_est, dec_objs.size(0))).float().cuda()
+            box_diff_dict = self.prepare_input(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
 
-            return self.decoder(z, dec_objs, dec_triplets, attributes)
+            self.LayoutDiff.set_input(box_diff_dict)
 
-    def sample(self, point_classes_idx, mean_est, cov_est, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=False):
-        with torch.no_grad():
-            z = torch.from_numpy(np.random.multivariate_normal(mean_est, cov_est, dec_objs.size(0))).float().cuda()
-            gen_sdf = None
-            if gen_shape:
-                un_rel_feat, rel_feat = self.encoder_2(z, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-                sdf_candidates = dec_sdfs
-                length = dec_objs.size(0)
-                zeros_tensor = torch.zeros_like(sdf_candidates[0])
-                mask = torch.ne(sdf_candidates, zeros_tensor)
-                ids = torch.unique(torch.where(mask)[0])
-                obj_selected = dec_objs[ids]
-                if rel_feat == None:
-                    rel_feat = un_rel_feat
-                diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
-                gen_sdf = self.ShapeDiff.rel2shape(diff_dict,uc_scale=3.)
+            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
 
-            return self.decoder(z, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes), gen_sdf
 
     def state_dict(self, epoch, counter):
         state_dict_1_layout = super(Sg2BoxDiffModel, self).state_dict()
@@ -482,64 +485,64 @@ class Sg2BoxDiffModel(nn.Module):
         state_dict_1_layout.update(state_dict_basic)
         return state_dict_1_layout
 
-    def collect_train_statistics(self, train_loader, with_points=False):
-        # model = model.eval()
-        mean_cat = None
-        if with_points:
-            means, vars = {}, {}
-            for idx in train_loader.dataset.point_classes_idx:
-                means[idx] = []
-                vars[idx] = []
-            means[-1] = []
-            vars[-1] = []
-
-        for idx, data in enumerate(train_loader):
-            if data == -1:
-                continue
-            try:
-                objs, triples, tight_boxes, objs_to_scene, triples_to_scene = data['decoder']['objs'], \
-                                                                              data['decoder']['tripltes'], \
-                                                                              data['decoder']['boxes'], \
-                                                                              data['decoder']['obj_to_scene'], \
-                                                                              data['decoder']['triple_to_scene']
-
-                enc_text_feat, enc_rel_feat = None, None
-                if 'feats' in data['decoder']:
-                    encoded_points = data['decoder']['feats']
-                    encoded_points = encoded_points.cuda()
-                if 'text_feats' in data['decoder'] and 'rel_feats' in data['decoder']:
-                    enc_text_feat, enc_rel_feat = data['decoder']['text_feats'], data['decoder']['rel_feats']
-                    enc_text_feat, enc_rel_feat = enc_text_feat.cuda(), enc_rel_feat.cuda()
-
-            except Exception as e:
-                print('Exception', str(e))
-                continue
-
-            objs, triples, tight_boxes = objs.cuda(), triples.cuda(), tight_boxes.cuda()
-            boxes = tight_boxes[:, :6]
-            angles = tight_boxes[:, 6].long() - 1
-            angles = torch.where(angles > 0, angles, torch.zeros_like(angles))
-            attributes = None
-
-
-            mean, logvar = self.encoder(objs, triples, boxes, attributes, enc_text_feat, enc_rel_feat, angles)
-            mean, logvar = mean.cpu().clone(), logvar.cpu().clone()
-
-            mean = mean.data.cpu().clone()
-            if mean_cat is None:
-                mean_cat = mean
-            else:
-                mean_cat = torch.cat([mean_cat, mean], dim=0)
-
-        mean_est = torch.mean(mean_cat, dim=0, keepdim=True)  # size 1*embed_dim
-        mean_cat = mean_cat - mean_est
-        cov_est_ = np.cov(mean_cat.numpy().T)
-        n = mean_cat.size(0)
-        d = mean_cat.size(1)
-        cov_est = np.zeros((d, d))
-        for i in range(n):
-            x = mean_cat[i].numpy()
-            cov_est += 1.0 / (n - 1.0) * np.outer(x, x)
-        mean_est = mean_est[0]
-
-        return mean_est, cov_est_
+    # def collect_train_statistics(self, train_loader, with_points=False):
+    #     # model = model.eval()
+    #     mean_cat = None
+    #     if with_points:
+    #         means, vars = {}, {}
+    #         for idx in train_loader.dataset.point_classes_idx:
+    #             means[idx] = []
+    #             vars[idx] = []
+    #         means[-1] = []
+    #         vars[-1] = []
+    #
+    #     for idx, data in enumerate(train_loader):
+    #         if data == -1:
+    #             continue
+    #         try:
+    #             objs, triples, tight_boxes, objs_to_scene, triples_to_scene = data['decoder']['objs'], \
+    #                                                                           data['decoder']['tripltes'], \
+    #                                                                           data['decoder']['boxes'], \
+    #                                                                           data['decoder']['obj_to_scene'], \
+    #                                                                           data['decoder']['triple_to_scene']
+    #
+    #             enc_text_feat, enc_rel_feat = None, None
+    #             if 'feats' in data['decoder']:
+    #                 encoded_points = data['decoder']['feats']
+    #                 encoded_points = encoded_points.cuda()
+    #             if 'text_feats' in data['decoder'] and 'rel_feats' in data['decoder']:
+    #                 enc_text_feat, enc_rel_feat = data['decoder']['text_feats'], data['decoder']['rel_feats']
+    #                 enc_text_feat, enc_rel_feat = enc_text_feat.cuda(), enc_rel_feat.cuda()
+    #
+    #         except Exception as e:
+    #             print('Exception', str(e))
+    #             continue
+    #
+    #         objs, triples, tight_boxes = objs.cuda(), triples.cuda(), tight_boxes.cuda()
+    #         boxes = tight_boxes[:, :6]
+    #         angles = tight_boxes[:, 6].long() - 1
+    #         angles = torch.where(angles > 0, angles, torch.zeros_like(angles))
+    #         attributes = None
+    #
+    #
+    #         mean, logvar = self.encoder(objs, triples, boxes, attributes, enc_text_feat, enc_rel_feat, angles)
+    #         mean, logvar = mean.cpu().clone(), logvar.cpu().clone()
+    #
+    #         mean = mean.data.cpu().clone()
+    #         if mean_cat is None:
+    #             mean_cat = mean
+    #         else:
+    #             mean_cat = torch.cat([mean_cat, mean], dim=0)
+    #
+    #     mean_est = torch.mean(mean_cat, dim=0, keepdim=True)  # size 1*embed_dim
+    #     mean_cat = mean_cat - mean_est
+    #     cov_est_ = np.cov(mean_cat.numpy().T)
+    #     n = mean_cat.size(0)
+    #     d = mean_cat.size(1)
+    #     cov_est = np.zeros((d, d))
+    #     for i in range(n):
+    #         x = mean_cat[i].numpy()
+    #         cov_est += 1.0 / (n - 1.0) * np.outer(x, x)
+    #     mean_est = mean_est[0]
+    #
+    #     return mean_est, cov_est_
