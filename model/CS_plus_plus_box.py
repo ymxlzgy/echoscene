@@ -102,7 +102,7 @@ class Sg2BoxDiffModel(nn.Module):
         # self.rel_l_mlp.apply(_init_weights)
         self.lr_init = 1e-4
 
-    # 0-35k->35k-70k->70k-140k->140k-
+    # 0-35k->35k-70k->70k-120k->120k-
     # 1e-4 -> 5e-5 -> 1e-5 -> 5e-6
     def lr_lambda(self, counter):
         # 35000
@@ -112,7 +112,7 @@ class Sg2BoxDiffModel(nn.Module):
         elif counter < 70000:
             return 5e-5 / self.lr_init
         # 120000
-        elif counter < 140000:
+        elif counter < 120000:
             return 1e-5 / self.lr_init
         else:
             return 5e-6 / self.lr_init
@@ -356,7 +356,7 @@ class Sg2BoxDiffModel(nn.Module):
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
     def prepare_input(self, triples, obj_embed, relation_cond, scene_ids=None, obj_boxes=None, obj_angles=None):
-        if obj_boxes and obj_angles:
+        if obj_boxes is not None and obj_angles is not None:
             obj_boxes = torch.cat((obj_boxes, obj_angles.reshape(-1,1)), dim=-1)
         diff_dict = {'preds': triples, 'box': obj_boxes, 'uc_b': obj_embed,
                      'c_b': relation_cond, "obj_id_to_scene": scene_ids}
