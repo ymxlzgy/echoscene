@@ -83,16 +83,16 @@ def get_closest_furniture_to_box(box_dict, query_size):
     return ids[id_min]
 
 
-def get_textured_objects_v2(boxes, datasize, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
-    os.makedirs(mesh_dir,exist_ok=True)
-    bbox_file = "/home/ymxlzgy/code/graphto3d_v2/GT/3dfront/cat_jid_trainval.json" if datasize == 'large' else "/home/ymxlzgy/code/graphto3d_v2/GT/3dfront/cat_jid_trainval_small.json"
+def get_textured_objects(boxes, datasize, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
+    os.makedirs(mesh_dir, exist_ok=True)
+    bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval_small.json"
     colors = iter(colors)
     with open(bbox_file, "r") as read_file:
         box_data = json.load(read_file)
     lamp_mesh_list = []
     trimesh_meshes = []
     raw_meshes = []
-    model_base_path = "/media/ymxlzgy/Data/Dataset/3D-FRONT/3D-FUTURE-model"
+    model_base_path = "/media/ymxlzgy/Data/Dataset/FRONT/3D-FUTURE-model"
     instance_id = 1
     for j in range(0, boxes.shape[0]):
         query_size = boxes[j, 0:3]
@@ -296,7 +296,6 @@ def get_generated_models_v1(boxes, shapes, cat_ids, mesh_dir, classes, render_bo
     return lamp_mesh_list, obj_list, raw_obj_list
 
 def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
-    os.makedirs(mesh_dir, exist_ok=True)
     mesh_gen = sdf_to_mesh(shapes,render_all=True)
     colors = iter(colors)
     trimesh_meshes = iter([pytorch3d_to_trimesh(mesh) for mesh in mesh_gen])
@@ -333,7 +332,6 @@ def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_bo
 
 
 def get_sdfusion_models(boxes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, no_stool=False, without_lamp=False):
-    os.makedirs(mesh_dir, exist_ok=True)
     sdfusion_model_path = "/media/ymxlzgy/Data/Dataset/3D-FRONT/txt2shape_results_latest"
     mapping_full2simple = None
     obj_list = []
@@ -521,8 +519,6 @@ def scale_box_params(box_params, file=None, angle=False):
     stats = np.loadtxt(file)
     if len(stats) == 14: # 3*2+3*2+1*2
         min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
-    elif len(stats) == 6: # 1*2+1*2+1*2
-        min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]
     else:
         raise NotImplementedError
     box_params[:3] = (box_params[:3] - min_lhw) / (max_lhw - min_lhw) # size

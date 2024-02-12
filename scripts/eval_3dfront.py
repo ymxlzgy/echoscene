@@ -153,8 +153,8 @@ def evaluate():
 
     reseed(47)
     print('\nGeneration Mode')
-    validate_constrains_loop(modelArgs, test_dataloader_no_changes, model, epoch=args.epoch, normalized_file=normalized_file, with_diversity=args.evaluate_diversity,
-                             bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, vocab=test_dataset_no_changes.vocab,
+    modelArgs['store_path'] = os.path.join(args.exp, "vis")
+    validate_constrains_loop(modelArgs, test_dataloader_no_changes, model, epoch=args.epoch, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, num_samples=args.num_samples, vocab=test_dataset_no_changes.vocab,
                              point_classes_idx=test_dataset_no_changes.point_classes_idx,
                              export_3d=args.export_3d, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
@@ -397,9 +397,8 @@ def validate_constrains_loop_w_changes(modelArgs, testdataloader, model, normali
                                                       np.mean(dic[keys[8]]), np.mean(dic[keys[9]]), np.mean(dic[keys[10]])])))
 
 
-def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, normalized_file=None, with_diversity=True, bin_angles=False, vocab=None,
-                             point_classes_idx=None, export_3d=False, cat2objs=None, datasize='large',
-                             num_samples=3, gen_shape=False):
+def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, normalized_file=None, with_diversity=True, vocab=None,
+                             point_classes_idx=None, export_3d=False, cat2objs=None, datasize='large', num_samples=3, gen_shape=False):
 
     if with_diversity and num_samples < 2:
         raise ValueError('Diversity requires at least two runs (i.e. num_samples > 1).')
@@ -465,10 +464,11 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
 
         with torch.no_grad():
 
-            boxes_pred, shapes_pred = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=gen_shape)
+            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=gen_shape)
 
-            boxes_pred, angles_pred = boxes_pred[:6], boxes_pred[6:]
-            if bin_angles:
+            boxes_pred, angles_pred = torch.concat((data_dict['sizes'],data_dict['translations']),dim=-1), data_dict['angles']
+            shapes_pred = data_dict['shapes']
+            if modelArgs['bin_angle']:
                 angles_pred = -180 + (torch.argmax(angles_pred, dim=1, keepdim=True) + 1)* 15.0 # angle (previously minus 1, now add it back)
                 boxes_pred_den = batch_torch_destandardize_box_params(boxes_pred, file=normalized_file) # mean, std
             else:
@@ -481,13 +481,13 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
             classes = sorted(list(set(vocab['object_idx_to_name'])))
             # layout and shape visualization through open3d
             if model.type_ == 'cs++_l':
-                render_box(model.type_, data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize, classes=classes, render_type='retrieval',
-                       classed_idx=dec_objs, store_img=True, render_boxes=False, visual=True, demo=False, no_stool = args.no_stool, without_lamp=True)
+                render_box(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
+                classes=classes, render_type='onlybox', store_img=True, render_boxes=False, visual=True, demo=False, without_lamp=False, store_path=modelArgs['store_path'])
             elif model.type_ == 'cs++':
                 if shapes_pred is not None:
                     shapes_pred = shapes_pred.cpu().detach()
-                render_full(model.type_, data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, classes=classes, render_type='full', classed_idx=dec_objs,
-                    shapes_pred=shapes_pred, store_img=True, render_boxes=False, visual=False, demo=False,epoch=epoch, without_lamp=False)
+                render_full(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
+                classes=classes, render_type='full', shapes_pred=shapes_pred, store_img=True, render_boxes=False, visual=False, demo=False,epoch=epoch, without_lamp=False, store_path=modelArgs['store_path'])
             else:
                 raise NotImplementedError
 
@@ -636,14 +636,13 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
                             tvstand_diversity_chamfer.append(np.mean(sequence_diversity))
 
         # compute constraints accuracy through simple geometric rules
-        accuracy = validate_constrains(dec_triples, boxes_pred, None, None, model.vocab, accuracy, file_dist=normalized_file, with_norm=model.type_ != 'sln')
+        accuracy = validate_constrains(dec_triples, boxes_pred, None, model.vocab, accuracy)
 
     if export_3d:
         # export box and shape predictions for future evaluation
-        result_path = os.path.join(args.exp, 'results')
-        if not os.path.exists(result_path):
-            # Create a new directory for results
-            os.makedirs(result_path)
+        result_path = os.path.join(modelArgs['store_path'], 'results')
+        # Create a new directory for results
+        os.makedirs(result_path, exist_ok=True)
         shape_filename = os.path.join(result_path, 'shapes_' + ('large' if datasize else 'small') + '.json')
         box_filename = os.path.join(result_path, 'boxes_' + ('large' if datasize else 'small') + '.json')
         json.dump(all_pred_boxes_exp, open(box_filename, 'w')) # 'dis_nomani_boxes_large.json'

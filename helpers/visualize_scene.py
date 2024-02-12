@@ -4,7 +4,7 @@ import open3d as o3d
 import numpy as np
 import trimesh
 
-from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_textured_objects_v2, get_sdfusion_models, get_bbox, get_generated_models_v1, get_generated_models_v2, trimeshes_to_pytorch3d, normalize_py3d_meshes
+from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_textured_objects, get_sdfusion_models, get_bbox, get_generated_models_v1, get_generated_models_v2, trimeshes_to_pytorch3d, normalize_py3d_meshes
 import json
 import torch
 import cv2
@@ -204,88 +204,15 @@ def render(predBoxes, predAngles=None, classes=None, classed_idx=None, shapes_pr
     vis.run()
     vis.destroy_window()
 
-model_dict = {'v1_box': 'g2bv1', 'v2_box': 'g2bv2', 'v2_full': 'g2sv2', 'v1_full': 'g2sv1'}
-def render_v1_full(model_type, scene_id, cats, predBoxes, predAngles=None, datasize='small', classes=None, classed_idx=None, shapes_pred=None, render_type='txt2shape',
-           render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None, no_stool = False, without_lamp=False, str_append=""):
-    bath_path = '/media/ymxlzgy/Data/graphto3d_v2_test/'+model_dict[model_type]
-    # bath_path = '/mnt/hdd1/3DSSG_dataset/results_qual/' + model_dict[model_type] + epoch
-    if datasize == 'small':
-        bath_path += '_small'
-    if no_stool:
-        bath_path += '_no_stool'
-    if not os.path.exists(bath_path):
-        os.makedirs(bath_path)
-    if render_type not in ['v1', 'retrieval', 'onlybox']:
-        raise ValueError('Render type needs to be either set to txt2shape or retrieval or onlybox.')
-    color_palette = np.array(sns.color_palette('hls', len(classes)))
-    mesh_dir = os.path.join(bath_path, 'object_meshes', render_type, scene_id[0])
-    if not os.path.exists(mesh_dir):
-        os.makedirs(mesh_dir)
-    box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=1)
-    if render_type == 'retrieval':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects_v2(box_and_angle, datasize, cats, classes, mesh_dir, colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'v1':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_models_v1(box_and_angle, shapes_pred, cats, mesh_dir, classes=classes, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
-
-    if render_type == 'onlybox':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_bbox(box_and_angle, cats, classes, colors=color_palette[cats], without_lamp=without_lamp)
-
-    if store_img and not demo:
-        img_path = os.path.join(bath_path, "render_imgs", render_type)
-        if not os.path.exists(img_path):
-            os.makedirs(img_path)
-        color_img = render_img(trimesh_meshes)
-        color_bgr = cv2.cvtColor(color_img, cv2.COLOR_RGBA2BGR)
-        cv2.imwrite(os.path.join(img_path, '{}.png'.format(scene_id[0])), color_bgr)
-
-    if lamp_mesh_list != []:
-        # trimesh_meshes.append(lamp_mesh_list[-1])
-        for lamp_mesh in lamp_mesh_list:
-            trimesh_meshes.append(lamp_mesh)
-    if demo:
-        floor_mesh = create_floor(box_and_angle, cats, classes)
-        trimesh_meshes.append(floor_mesh)
-    scene = trimesh.Scene(trimesh_meshes)
-    scene_path = os.path.join(bath_path, render_type)
-    if not os.path.exists(scene_path):
-        os.makedirs(scene_path)
-    render_type_ = render_type
-    if len(str_append) >0:
-        render_type_ = render_type + str_append
-    scene.export(os.path.join(scene_path, "{0}_{1}.glb".format(scene_id[0], render_type_)))
-
-    if visual:
-        scene.show()
-
-    if store_img and not demo:
-        img_path = os.path.join(bath_path, "render_imgs", render_type)
-        if not os.path.exists(img_path):
-            os.makedirs(img_path)
-        color_img = render_img(trimesh_meshes)
-        color_bgr = cv2.cvtColor(color_img, cv2.COLOR_RGBA2BGR)
-        file_name = scene_id[0]
-        if len(str_append) > 0:
-            file_name += str_append
-        cv2.imwrite(os.path.join(img_path, '{}.png'.format(file_name)), color_bgr)
-
-
-def render_v2_box(model_type, scene_id, cats, predBoxes, predAngles=None, datasize='small', classes=None,
-                  classed_idx=None, render_type='txt2shape',
-                  render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None,
-                  no_stool=False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None):
-    # bath_path = '/media/ymxlzgy/Data/graphto3d_v2_test/'+model_dict[model_type]
-    bath_path = '/mnt/hdd1/3DSSG_dataset/results_qual/' + model_dict[model_type] + epoch
-    if datasize == 'small':
-        bath_path += '_small'
-    if no_stool:
-        bath_path += '_no_stool'
-    if not os.path.exists(bath_path):
-        os.makedirs(bath_path)
+def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=None, render_type='txt2shape',
+               render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, without_lamp=False,
+               str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
+    os.makedirs(store_path,exist_ok=True)
     if render_type not in ['txt2shape', 'retrieval', 'onlybox']:
         raise ValueError('Render type needs to be either set to txt2shape or retrieval or onlybox.')
     color_palette = np.array(sns.color_palette('hls', len(classes)))
-    box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=1)
+    box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=-1)
 
     obj_n = len(box_and_angle)
     if mani == 2:
@@ -294,12 +221,14 @@ def render_v2_box(model_type, scene_id, cats, predBoxes, predAngles=None, datasi
         elif len(manipulated_nodes) > 0:
             box_and_angle = box_and_angle[sorted(manipulated_nodes)]
 
+    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id)
+    os.makedirs(mesh_dir, exist_ok=True)
     if render_type == 'retrieval':
-        trimesh_meshes = get_textured_objects_v2(box_and_angle, datasize, cats, classes, render_boxes=render_boxes,
+        trimesh_meshes = get_textured_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes,
                                                  colors=color_palette[cats], without_lamp=without_lamp)
 
     if render_type == 'txt2shape':
-        trimesh_meshes = get_sdfusion_models(box_and_angle, cats, classes, render_boxes=render_boxes,
+        trimesh_meshes = get_sdfusion_models(box_and_angle, cats, classes, mesh_dir, render_boxes=render_boxes,
                                              colors=color_palette[cats], without_lamp=without_lamp)
 
     if render_type == 'onlybox':
@@ -307,7 +236,7 @@ def render_v2_box(model_type, scene_id, cats, predBoxes, predAngles=None, datasi
 
     if mani == 2:
         print("manipulated nodes: ", len(manipulated_nodes), len(trimesh_meshes))
-        if len(missing_nodes) >0:
+        if len(missing_nodes) > 0:
             trimesh_meshes += objs_before
             query_label = classes[cats[0]].strip('\n')
             str_append += "_" + query_label
@@ -351,41 +280,33 @@ def render_v2_box(model_type, scene_id, cats, predBoxes, predAngles=None, datasi
         floor_mesh = create_floor(box_and_angle, cats, classes)
         trimesh_meshes.append(floor_mesh)
     scene = trimesh.Scene(trimesh_meshes)
-    scene_path = os.path.join(bath_path, render_type)
-    if not os.path.exists(scene_path):
-        os.makedirs(scene_path)
+    scene_path = os.path.join(store_path, render_type)
     if len(str_append) > 0:
-        render_type_ = render_type + str_append
-    scene.export(os.path.join(scene_path, "{0}_{1}.glb".format(scene_id[0], render_type_)))
+        render_type += str_append
+    os.makedirs(scene_path, exist_ok=True)
+    scene.export(os.path.join(scene_path, "{0}_{1}.glb".format(scene_id[0], render_type)))
 
     if visual:
         scene.show()
 
     if store_img and not demo:
-        img_path = os.path.join(bath_path, render_type, "render_imgs")
-        if not os.path.exists(img_path):
-            os.makedirs(img_path)
+        img_path = os.path.join(store_path, render_type, "render_imgs")
+        os.makedirs(img_path, exist_ok=True)
         color_img = render_img(trimesh_meshes)
         color_bgr = cv2.cvtColor(color_img, cv2.COLOR_RGBA2BGR)
         file_name = scene_id[0]
         if len(str_append) > 0:
             file_name += str_append
-        cv2.imwrite(os.path.join(img_path, '{}.png'.format(file_name)), color_bgr)
+        cv2.imwrite(os.path.join(img_path, f'{file_name}.png'), color_bgr)
 
     if mani==1:
         return trimesh_meshes
 
-def render_v2_full(model_type, scene_id, cats, predBoxes, predAngles=None, datasize='small', classes=None, classed_idx=None, shapes_pred=None, render_type='txt2shape',
-           render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False,epoch=None, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None):
-    bath_path = '/media/ymxlzgy/Data/graphto3d_v2_test/'+model_dict[model_type]+epoch
-    # bath_path = '/mnt/hdd1/3DSSG_dataset/results_qual/' + model_dict[model_type] + epoch
-    if datasize == 'small':
-        bath_path += '_small'
-    if no_stool:
-        bath_path += '_no_stool'
-    os.makedirs(bath_path, exist_ok=True)
-    mesh_dir = os.path.join(bath_path, 'object_meshes')
-    if render_type not in ['v2', 'txt2shape', 'retrieval', 'onlybox']:
+def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', classes=None, shapes_pred=None, render_type='txt2shape',
+           render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
+    os.makedirs(store_path,exist_ok=True)
+
+    if render_type not in ['cs++', 'txt2shape', 'retrieval', 'onlybox']:
         raise ValueError('Render type needs to be either set to v2 or txt2shape or retrieval or onlybox.')
     color_palette = np.array(sns.color_palette('hls', len(classes)))
     box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=1)
@@ -397,11 +318,13 @@ def render_v2_full(model_type, scene_id, cats, predBoxes, predAngles=None, datas
         elif len(manipulated_nodes) > 0:
             box_and_angle = box_and_angle[sorted(manipulated_nodes)]
 
-    if render_type == 'v2':
+    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id)
+    os.makedirs(mesh_dir, exist_ok=True)
+    if render_type == 'cs++':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_models_v2(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
     if render_type == 'retrieval':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects_v2(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
+        lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
     if render_type == 'txt2shape':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_sdfusion_models(box_and_angle, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], no_stool=no_stool, without_lamp=without_lamp)
@@ -434,12 +357,11 @@ def render_v2_full(model_type, scene_id, cats, predBoxes, predAngles=None, datas
         floor_mesh = create_floor(box_and_angle, cats, classes)
         trimesh_meshes.append(floor_mesh)
     scene = trimesh.Scene(trimesh_meshes)
-    scene_path = os.path.join(bath_path, render_type)
-    if not os.path.exists(scene_path):
-        os.makedirs(scene_path)
     if len(str_append) >0:
         # render_type_ = render_type + str_append
         render_type += str_append
+    scene_path = os.path.join(store_path, render_type)
+    os.makedirs(scene_path, exist_ok=True)
     scene.export(os.path.join(scene_path, "{0}_{1}.glb".format(scene_id[0], render_type)))
 
     if visual:
@@ -449,8 +371,9 @@ def render_v2_full(model_type, scene_id, cats, predBoxes, predAngles=None, datas
     #     color_img = render_img(trimesh_meshes)
     #     color_bgr = cv2.cvtColor(color_img, cv2.COLOR_RGBA2BGR)
     #     cv2.imwrite(os.path.join(img_path, '{}.png'.format(scene_id[0])), color_bgr)
+
     if store_img and not demo:
-        img_path = os.path.join(bath_path, "render_imgs", render_type)
+        img_path = os.path.join(store_path, "render_imgs", render_type)
         if not os.path.exists(img_path):
             os.makedirs(img_path)
         color_img = render_img(trimesh_meshes)

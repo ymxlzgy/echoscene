@@ -54,20 +54,19 @@ def denormalize(box_params, file=None, with_norm=True):
         return box_params
 
 
-def validate_constrains(triples, pred_boxes, gt_boxes, keep, vocab, accuracy, file_dist=None, with_norm=True,
-                        strict=True, overlap_threshold=0.3):
+def validate_constrains(triples, pred_boxes, keep, vocab, accuracy, strict=True, overlap_threshold=0.3):
 
     param6 = pred_boxes.shape[1] == 6
     layout_boxes = pred_boxes
 
     for [s, p, o] in triples:
         if keep is None:
-            box_s = denormalize(layout_boxes[s.item()].cpu().detach().numpy(), file=file_dist,  with_norm=with_norm)
-            box_o = denormalize(layout_boxes[o.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
+            box_s = layout_boxes[s.item()].cpu().detach().numpy()
+            box_o = layout_boxes[o.item()].cpu().detach().numpy()
         else:
             if keep[s.item()] == 1 and keep[o.item()] == 1: # if both are unchanged we evaluate the normal constraints
-                box_s = denormalize(layout_boxes[s.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
-                box_o = denormalize(layout_boxes[o.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
+                box_s = layout_boxes[s.item()].cpu().detach().numpy()
+                box_o = layout_boxes[o.item()].cpu().detach().numpy()
             else:
                 continue
 
