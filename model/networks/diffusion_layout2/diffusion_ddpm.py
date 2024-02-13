@@ -219,7 +219,7 @@ class GaussianDiffusion:
 
     def p_mean_variance(self, denoise_fn, data, t, obj_embed, triples, condition, clip_denoised: bool, return_pred_xstart: bool):
 
-        model_output = denoise_fn(data, obj_embed, triples, timesteps=t, context=condition)
+        model_output = denoise_fn(data, obj_embed, triples, t, condition)
 
 
         if self.model_var_type in ['fixedsmall', 'fixedlarge']:
@@ -336,7 +336,7 @@ class GaussianDiffusion:
 
         assert isinstance(shape, (tuple, list))
         x_t = noise_fn(size=shape, dtype=torch.float, device=device)
-        for t in reversed(range(0, self.num_timesteps if not keep_running else len(self.betas))):
+        for t in tqdm(reversed(range(0, self.num_timesteps if not keep_running else len(self.betas)))):
             t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(t)
             x_t = self.p_sample_sg(denoise_fn=denoise_fn, data=x_t, t=t_, obj_embed=obj_embed, triples=triples, condition=condition, noise_fn=noise_fn,
                                   clip_denoised=clip_denoised, return_pred_xstart=False)
@@ -436,10 +436,11 @@ class GaussianDiffusion:
         loss = loss_bbox / torch.exp(logvar_t) + logvar_t
         if self.loss_iou:
             loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t,  timestep=t, pred_data=denoise_out, scene_ids=scene_ids)
+            loss += loss_iou_valid
         else:
             loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
             bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
-        return loss.mean() + loss_iou_valid.mean(), {
+        return loss.mean(), {
             'loss.bbox': loss_bbox.mean(),
             'loss.trans': loss_trans.mean(),
             'loss.size': loss_size.mean(),
@@ -463,11 +464,12 @@ class GaussianDiffusion:
 
         if self.loss_iou:
             loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t, timestep=t, pred_data=denoise_out,scene_ids=scene_ids)
+            losses += loss_iou_valid
         else:
             loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
             bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
 
-        return losses.mean() + loss_iou_valid.mean(), {
+        return losses.mean(), {
             'loss.bbox': loss_bbox.mean(),
             'loss.trans': loss_trans.mean(),
             'loss.size': loss_size.mean(),

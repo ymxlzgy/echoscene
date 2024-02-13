@@ -140,7 +140,6 @@ class DiffusionSceneLayout_DDPM(Module):
                 condition_cross = self.fc_text_f( text_f )
         else:
             condition_cross = None
-            print('unconditional generation sampling')
         # reverse sampling
         if ret_traj:
             samples = self.df.gen_sample_traj_sg(noise_shape, obj_embed.device, obj_embed, obj_triples, freq=freq, condition=condition, clip_denoised=clip_denoised)

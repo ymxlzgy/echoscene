@@ -464,10 +464,14 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
 
         with torch.no_grad():
 
-            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=gen_shape)
+            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'],data_dict['translations']),dim=-1), data_dict['angles']
-            shapes_pred = data_dict['shapes']
+            shapes_pred = None
+            try:
+                shapes_pred = data_dict['shapes']
+            except:
+                print('no shape, only run layout branch.')
             if modelArgs['bin_angle']:
                 angles_pred = -180 + (torch.argmax(angles_pred, dim=1, keepdim=True) + 1)* 15.0 # angle (previously minus 1, now add it back)
                 boxes_pred_den = batch_torch_destandardize_box_params(boxes_pred, file=normalized_file) # mean, std
@@ -480,9 +484,10 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
             colors = None
             classes = sorted(list(set(vocab['object_idx_to_name'])))
             # layout and shape visualization through open3d
+            print("rendering", [classes[i].strip('\n') for i in dec_objs])
             if model.type_ == 'cs++_l':
                 render_box(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
-                classes=classes, render_type='onlybox', store_img=True, render_boxes=False, visual=True, demo=False, without_lamp=False, store_path=modelArgs['store_path'])
+                classes=classes, render_type='onlybox', store_img=False, render_boxes=False, visual=True, demo=False, without_lamp=False, store_path=modelArgs['store_path'])
             elif model.type_ == 'cs++':
                 if shapes_pred is not None:
                     shapes_pred = shapes_pred.cpu().detach()
