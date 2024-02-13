@@ -436,11 +436,10 @@ class GaussianDiffusion:
         loss = loss_bbox / torch.exp(logvar_t) + logvar_t
         if self.loss_iou:
             loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t,  timestep=t, pred_data=denoise_out, scene_ids=scene_ids)
-            loss += loss_iou_valid
         else:
             loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
             bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
-        return loss.mean(), {
+        return loss.mean() + loss_iou_valid.mean(), {
             'loss.bbox': loss_bbox.mean(),
             'loss.trans': loss_trans.mean(),
             'loss.size': loss_size.mean(),
@@ -464,12 +463,11 @@ class GaussianDiffusion:
 
         if self.loss_iou:
             loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t, timestep=t, pred_data=denoise_out,scene_ids=scene_ids)
-            losses += loss_iou_valid
         else:
             loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
             bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
 
-        return losses.mean(), {
+        return losses.mean() + loss_iou_valid.mean(), {
             'loss.bbox': loss_bbox.mean(),
             'loss.trans': loss_trans.mean(),
             'loss.size': loss_size.mean(),

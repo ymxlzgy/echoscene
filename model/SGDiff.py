@@ -171,11 +171,29 @@ class SGDiff(nn.Module):
         else:
             raise NotImplementedError
 
-    def sample_box(self, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None):
+    def sample_boxes_and_shape_with_changes(self, enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                            dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, manipulated_nodes, gen_shape=False):
         if self.type_ == 'cs++_l':
-            return self.vae_box.sampleBoxes(self.mean_est_box, self.cov_est_box, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
+            layout_dict = self.diff.sampleBoxes_with_changes(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                                             dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, manipulated_nodes)
+            return layout_dict
         elif self.type_ == 'cs++':
-            return self.diff.sample(self.mean_est, self.cov_est, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)[0]
+            shape_dict, layout_dict = self.diff.sample_with_changes(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                                                    dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, manipulated_nodes, gen_shape=gen_shape)
+            return {**shape_dict, **layout_dict}
+        else:
+            raise NotImplementedError
+
+    def sample_boxes_and_shape_with_additions(self, enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                            dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes, gen_shape=False):
+        if self.type_ == 'cs++_l':
+            layout_dict = self.diff.sampleBoxes_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                                             dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes)
+            return layout_dict
+        elif self.type_ == 'cs++':
+            shape_dict, layout_dict = self.diff.sample_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                                                    dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes, gen_shape=gen_shape)
+            return {**shape_dict, **layout_dict}
         else:
             raise NotImplementedError
 

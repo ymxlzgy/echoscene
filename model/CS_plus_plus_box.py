@@ -1,7 +1,5 @@
-import torch
 import random
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from model.graph import GraphTripleConvNet, _init_weights, make_mlp
 from model.networks.diffusion_layout2.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
@@ -100,26 +98,28 @@ class Sg2BoxDiffModel(nn.Module):
         #
         # # initialization
         # self.rel_l_mlp.apply(_init_weights)
-        self.lr_init = 1e-4
+        self.lr_init = self.diff_cfg.hyper.lr_init
+        self.lr_step = self.diff_cfg.hyper.lr_step
+        self.lr_evo = self.diff_cfg.hyper.lr_evo
 
     # 0-35k->35k-70k->70k-120k->120k-
     # 1e-4 -> 5e-5 -> 1e-5 -> 5e-6
     def lr_lambda(self, counter):
         # 35000
-        if counter < 35000:
+        if counter < self.lr_step[0]:
             return 1.0
-        # 85000
-        elif counter < 70000:
-            return 5e-5 / self.lr_init
+        # 70000
+        elif counter < self.lr_step[1]:
+            return self.lr_evo[0] / self.lr_init
         # 120000
-        elif counter < 120000:
-            return 1e-5 / self.lr_init
+        elif counter < self.lr_step[2]:
+            return self.lr_evo[1] / self.lr_init
         else:
-            return 5e-6 / self.lr_init
+            return self.lr_evo[2] / self.lr_init
 
     def optimizer_ini(self):
         gcn_layout_df_params = [p for p in self.parameters() if p.requires_grad == True]
-        self.optimizerFULL = optim.AdamW(gcn_layout_df_params, lr=self.lr_init)  # self.lr)
+        self.optimizerFULL = optim.AdamW(gcn_layout_df_params, lr=self.lr_init)
         self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizerFULL, lr_lambda=self.lr_lambda)
         self.optimizers = [self.optimizerFULL]
 
@@ -417,19 +417,19 @@ class Sg2BoxDiffModel(nn.Module):
 
         return None, 0, Layout_loss, Layout_loss_dict
 
-    def forward_no_mani(self, objs, triples, enc, attributes):
-        mu, logvar = self.encoder(objs, triples, enc, attributes)
-        # reparameterization
-        std = torch.exp(0.5 * logvar)
-        # standard sampling
-        eps = torch.randn_like(std)
-        z = eps.mul(std).add_(mu)
-        keep = []
-        dec_man_enc_pred = self.decoder(z, objs, triples, attributes)
-        for i in range(len(dec_man_enc_pred)):
-            keep.append(1)
-        keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
-        return mu, logvar, dec_man_enc_pred, keep
+    # def forward_no_mani(self, objs, triples, enc, attributes):
+    #     mu, logvar = self.encoder(objs, triples, enc, attributes)
+    #     # reparameterization
+    #     std = torch.exp(0.5 * logvar)
+    #     # standard sampling
+    #     eps = torch.randn_like(std)
+    #     z = eps.mul(std).add_(mu)
+    #     keep = []
+    #     dec_man_enc_pred = self.decoder(z, objs, triples, attributes)
+    #     for i in range(len(dec_man_enc_pred)):
+    #         keep.append(1)
+    #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+    #     return mu, logvar, dec_man_enc_pred, keep
 
     # def sampleShape(self, point_classes_idx, point_ae, mean_est_shape, cov_est_shape, dec_objs, dec_triplets,
     #                 attributes=None):
@@ -455,7 +455,7 @@ class Sg2BoxDiffModel(nn.Module):
             obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
             change_repr = []
             for i in range(len(latent_obj_vecs)):
-                noisechange = np.random.normal(0, 1, self.embedding_dim)
+                noisechange = np.zeros(self.embedding_dim)
                 change_repr.append(torch.from_numpy(noisechange).float().cuda())
             change_repr = torch.stack(change_repr, dim=0)
             latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
@@ -477,72 +477,106 @@ class Sg2BoxDiffModel(nn.Module):
 
             return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
+    def sampleBoxes_with_changes(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs,
+                                 dec_triples, dec_text_feat, dec_rel_feat, manipulated_nodes):
+        with torch.no_grad():
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(enc_objs, enc_triples,
+                                                                                         enc_text_feat,
+                                                                                         enc_rel_feat)
+            # mark changes in nodes
+            change_repr = []
+            for i in range(len(latent_obj_vecs)):
+                if i not in manipulated_nodes:
+                    noisechange = np.zeros(self.embedding_dim)
+                else:
+                    noisechange = np.random.normal(0, 1, self.embedding_dim)
+                change_repr.append(torch.from_numpy(noisechange).float().cuda())
+            change_repr = torch.stack(change_repr, dim=0)
+            latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
+            latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs,
+                                                                                    dec_triples, dec_text_feat,
+                                                                                    dec_rel_feat)
+            if not self.replace_all_latent:
+                # take original nodes when untouched
+                touched_nodes = torch.tensor(sorted(manipulated_nodes)).long()
+                for touched_node in touched_nodes:
+                    latent_obj_vecs = torch.cat(
+                        [latent_obj_vecs[:touched_node], latent_obj_vecs_[touched_node:touched_node + 1],
+                         latent_obj_vecs[touched_node + 1:]], dim=0)
+            else:
+                latent_obj_vecs = latent_obj_vecs_
 
+            ## relation embeddings -> diffusion
+            # c_rel_feat_b = latent_obj_vecs_
+            # if self.s_l_separated:
+            #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triplets)
+            # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
+            # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+            #
+            # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
+            # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
+
+            box_diff_dict = self.prepare_input(dec_triples, obj_embed_, relation_cond=latent_obj_vecs)
+
+            self.LayoutDiff.set_input(box_diff_dict)
+
+            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+
+    def sampleBoxes_with_additions(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs,
+                                   dec_triples, dec_text_feat, dec_rel_feat, missing_nodes):
+        with torch.no_grad():
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(enc_objs, enc_triples, enc_text_feat, enc_rel_feat)
+
+            # append zero nodes
+            nodes_added = []
+            for i in range(len(missing_nodes)):
+                ad_id = missing_nodes[i] + i
+                nodes_added.append(ad_id)
+                noise = np.zeros(self.out_dim_ini_encoder)
+                zeros = torch.from_numpy(noise.reshape(1, self.out_dim_ini_encoder))
+                zeros.requires_grad = True
+                zeros = zeros.float().cuda()
+                latent_obj_vecs = torch.cat([latent_obj_vecs[:ad_id], zeros, latent_obj_vecs[ad_id:]], dim=0)
+
+            change_repr = []
+            for i in range(len(latent_obj_vecs)):
+                if i not in nodes_added:
+                    noisechange = np.zeros(self.embedding_dim)
+                else:
+                    noisechange = np.random.normal(0, 1, self.embedding_dim)
+                change_repr.append(torch.from_numpy(noisechange).float().cuda())
+            change_repr = torch.stack(change_repr, dim=0)
+            latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
+            latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat)
+
+            if not self.replace_all_latent:
+                # take original nodes when untouched
+                touched_nodes = torch.tensor(sorted(nodes_added)).long()
+                for touched_node in touched_nodes:
+                    latent_obj_vecs = torch.cat(
+                        [latent_obj_vecs[:touched_node], latent_obj_vecs_[touched_node:touched_node + 1],
+                         latent_obj_vecs[touched_node + 1:]], dim=0)
+            else:
+                latent_obj_vecs = latent_obj_vecs_
+
+            ## relation embeddings -> diffusion
+            # c_rel_feat_b = latent_obj_vecs_
+            # if self.s_l_separated:
+            #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triplets)
+            # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
+            # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+            #
+            # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
+            # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
+
+            box_diff_dict = self.prepare_input(dec_triples, obj_embed_, relation_cond=latent_obj_vecs)
+
+            self.LayoutDiff.set_input(box_diff_dict)
+
+            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
     def state_dict(self, epoch, counter):
         state_dict_1_layout = super(Sg2BoxDiffModel, self).state_dict()
         state_dict_basic = {'epoch': epoch, 'counter': counter, 'opt': self.optimizerFULL.state_dict()}
         state_dict_1_layout.update(state_dict_basic)
         return state_dict_1_layout
-
-    # def collect_train_statistics(self, train_loader, with_points=False):
-    #     # model = model.eval()
-    #     mean_cat = None
-    #     if with_points:
-    #         means, vars = {}, {}
-    #         for idx in train_loader.dataset.point_classes_idx:
-    #             means[idx] = []
-    #             vars[idx] = []
-    #         means[-1] = []
-    #         vars[-1] = []
-    #
-    #     for idx, data in enumerate(train_loader):
-    #         if data == -1:
-    #             continue
-    #         try:
-    #             objs, triples, tight_boxes, objs_to_scene, triples_to_scene = data['decoder']['objs'], \
-    #                                                                           data['decoder']['tripltes'], \
-    #                                                                           data['decoder']['boxes'], \
-    #                                                                           data['decoder']['obj_to_scene'], \
-    #                                                                           data['decoder']['triple_to_scene']
-    #
-    #             enc_text_feat, enc_rel_feat = None, None
-    #             if 'feats' in data['decoder']:
-    #                 encoded_points = data['decoder']['feats']
-    #                 encoded_points = encoded_points.cuda()
-    #             if 'text_feats' in data['decoder'] and 'rel_feats' in data['decoder']:
-    #                 enc_text_feat, enc_rel_feat = data['decoder']['text_feats'], data['decoder']['rel_feats']
-    #                 enc_text_feat, enc_rel_feat = enc_text_feat.cuda(), enc_rel_feat.cuda()
-    #
-    #         except Exception as e:
-    #             print('Exception', str(e))
-    #             continue
-    #
-    #         objs, triples, tight_boxes = objs.cuda(), triples.cuda(), tight_boxes.cuda()
-    #         boxes = tight_boxes[:, :6]
-    #         angles = tight_boxes[:, 6].long() - 1
-    #         angles = torch.where(angles > 0, angles, torch.zeros_like(angles))
-    #         attributes = None
-    #
-    #
-    #         mean, logvar = self.encoder(objs, triples, boxes, attributes, enc_text_feat, enc_rel_feat, angles)
-    #         mean, logvar = mean.cpu().clone(), logvar.cpu().clone()
-    #
-    #         mean = mean.data.cpu().clone()
-    #         if mean_cat is None:
-    #             mean_cat = mean
-    #         else:
-    #             mean_cat = torch.cat([mean_cat, mean], dim=0)
-    #
-    #     mean_est = torch.mean(mean_cat, dim=0, keepdim=True)  # size 1*embed_dim
-    #     mean_cat = mean_cat - mean_est
-    #     cov_est_ = np.cov(mean_cat.numpy().T)
-    #     n = mean_cat.size(0)
-    #     d = mean_cat.size(1)
-    #     cov_est = np.zeros((d, d))
-    #     for i in range(n):
-    #         x = mean_cat[i].numpy()
-    #         cov_est += 1.0 / (n - 1.0) * np.outer(x, x)
-    #     mean_est = mean_est[0]
-    #
-    #     return mean_est, cov_est_

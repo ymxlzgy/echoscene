@@ -1,17 +1,13 @@
-import torch
 import random
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from model.graph import GraphTripleConvNet, _init_weights, make_mlp
 from model.networks.diffusion_shape.sdfusion_txt2shape_model import SDFusionText2ShapeModel
 from model.networks.diffusion_shape.diff_utils.visualizer import Visualizer
 from model.networks.diffusion_shape.diff_utils.distributed import get_rank
-from model.networks.diffusion_layout.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
+from model.networks.diffusion_layout2.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
 import numpy as np
-from helpers.util import bool_flag, _CustomDataParallel
 from helpers.lr_scheduler import *
-from fvcore.common.param_scheduler import MultiStepParamScheduler
 
 
 class Sg2ScDiffModel(nn.Module):
@@ -100,7 +96,6 @@ class Sg2ScDiffModel(nn.Module):
         self.visualizer = Visualizer(self.diff_cfg) # visualizer
         if get_rank() == 0:
             self.visualizer.setup_io()
-
         rel_s_layers = [gconv_dim * 2 + add_dim, 960, 1280] # cross attn
         if self.ShapeDiff.df.conditioning_key == 'concat':
             rel_s_layers = [gconv_dim * 2 + add_dim, 1280, 4096]
@@ -108,41 +103,41 @@ class Sg2ScDiffModel(nn.Module):
 
         ## layout branch
         self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg)
-        l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
-        rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
-        if self.LayoutDiff.df.model.conditioning_key == 'concat':
-            l_concat_dim = self.diff_cfg.layout_branch.denoiser_kwargs.concat_dim
-            rel_l_layers = [gconv_dim * 2 + add_dim, 1280, l_concat_dim]
-        self.rel_l_mlp = make_mlp(rel_l_layers, batch_norm=mlp_normalization, norelu=True)
-
-
-        # initialization
+        # l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
+        # rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
+        # if self.LayoutDiff.df.model.conditioning_key == 'concat':
+        #     l_concat_dim = self.diff_cfg.layout_branch.denoiser_kwargs.concat_dim
+        #     rel_l_layers = [gconv_dim * 2 + add_dim, 1280, l_concat_dim]
+        # self.rel_l_mlp = make_mlp(rel_l_layers, batch_norm=mlp_normalization, norelu=True)
+        #
+        #
+        # # initialization
         self.rel_s_mlp.apply(_init_weights)
-        self.rel_l_mlp.apply(_init_weights)
+        # self.rel_l_mlp.apply(_init_weights)
+        self.lr_init = self.diff_cfg.hyper.lr_init
+        self.lr_step = self.diff_cfg.hyper.lr_step
+        self.lr_evo = self.diff_cfg.hyper.lr_evo
 
-    # 0-20k->20k-60k->60k-100k->100k-
+    # 0-35k->35k-70k->70k-120k->120k-
     # 1e-4 -> 5e-5 -> 1e-5 -> 5e-6
     def lr_lambda(self, counter):
-        # 10000
-        if counter < 20000:
+        # 35000
+        if counter < self.lr_step[0]:
             return 1.0
-        # 40000
-        elif counter < 60000:
-            return 5e-5 / 1e-4
-        # 80000
-        elif counter < 100000:
-            return 1e-5 / 1e-4
+        # 70000
+        elif counter < self.lr_step[1]:
+            return self.lr_evo[0] / self.lr_init
+        # 120000
+        elif counter < self.lr_step[2]:
+            return self.lr_evo[1] / self.lr_init
         else:
-            return 5e-6 / 1e-4
+            return self.lr_evo[2] / self.lr_init
 
     def optimizer_ini(self):
         gcn_layout_df_params = [p for p in self.parameters() if p.requires_grad == True]
         shape_df_params = self.ShapeDiff.trainable_params
-        # layout_df_params = self.LayoutDiff.trainable_params
-
         trainable_params = gcn_layout_df_params + shape_df_params
-
-        self.optimizerFULL = optim.AdamW(trainable_params, lr=1e-4)  # self.lr)
+        self.optimizerFULL = optim.AdamW(trainable_params, lr=1e-4)
         self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizerFULL, lr_lambda=self.lr_lambda)
         self.optimizers = [self.optimizerFULL]
 
@@ -361,11 +356,8 @@ class Sg2ScDiffModel(nn.Module):
 
         # find the corresponding ids in the coarse object classes
         for grained_cat_id in sampled_grained:
-            if shape_branch:
-                selected_indices = (cat_grained_list == grained_cat_id).nonzero(as_tuple=True)[0]
-            else:
-                selected_indices = [i for i, x in enumerate(cat_grained_list) if x == grained_cat_id]
-            selected_index = selected_indices[random.choice(range(len(selected_indices)))] # only pick one index for a grained_cat
+            selected_indices = [i for i, x in enumerate(cat_grained_list) if x == grained_cat_id]
+            selected_index = selected_indices[random.choice(range(len(selected_indices)))]
             selected_object_indices.append(selected_index)
 
         return torch.tensor(selected_object_indices)
@@ -456,6 +448,62 @@ class Sg2ScDiffModel(nn.Module):
                      "scene_ids": scene_ids[:self.diffusion_bs]}
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
+    def select_sdfs(self, dec_objs_to_scene, obj_cats, obj_cats_grained, sdfs, s_feat_ucon, s_feat_con, random=False):
+        dec_objs_to_scene = dec_objs_to_scene.detach().cpu().numpy()
+        batch_size = np.max(dec_objs_to_scene) + 1
+        scene_ids = []
+        sdf_selected = []
+        uc_rel_s_selected = []
+        c_rel_s_selected = []
+        obj_cat_selected = []
+        num_obj = int(np.ceil(self.diffusion_bs / batch_size)) # how many objects should be picked in a scene
+        for i in range(batch_size):
+            # sdf, node classes, node fine_grained classes in the current scene
+            sdf_candidates = sdfs[np.where(dec_objs_to_scene == i)[0]]
+            obj_cat = obj_cats[np.where(dec_objs_to_scene == i)[0]]
+            obj_cat_grained = obj_cats_grained[np.where(dec_objs_to_scene == i)[0]]
+
+            # relation embeddings conditioning the shape diffusion in the current scene
+            uc_rel_s = s_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
+            c_rel_s = s_feat_con[np.where(dec_objs_to_scene == i)[0]]
+
+            zeros_tensor = torch.zeros_like(sdf_candidates[0])
+            mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
+            object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
+            if random:
+                # randomly choose num_obj elements for shape branch
+                perm_obj = torch.randperm(len(object_inds))
+                random_obj_inds = object_inds[perm_obj[:num_obj]]
+                sdf_selected.append(sdf_candidates[random_obj_inds])
+                uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
+                c_rel_s_selected.append(c_rel_s[random_obj_inds])
+                obj_cat_selected.append(obj_cat[random_obj_inds])
+            else:
+                ## balance every fine-grained category.
+                # shape branch excludes the floor
+                selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
+                sdf_selected.append(sdf_candidates[object_inds][selected_inds])
+                uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
+                c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
+                obj_cat_selected.append(obj_cat[object_inds][selected_inds])
+            scene_ids.append(np.repeat(i,num_obj))
+
+        sdf_selected = torch.cat(sdf_selected, dim=0).cuda()
+        uc_rel_s_selected = torch.cat(uc_rel_s_selected, dim=0).cuda()
+        c_rel_s_selected = torch.cat(c_rel_s_selected, dim=0).cuda()
+        obj_cat_selected = torch.cat(obj_cat_selected, dim=0)
+        scene_ids = np.concatenate(scene_ids, axis=0)
+        diff_dict = {'sdf': sdf_selected[:self.diffusion_bs], 'uc_s': uc_rel_s_selected[:self.diffusion_bs],
+                     'c_s': c_rel_s_selected[:self.diffusion_bs], "scene_ids": scene_ids[:self.diffusion_bs]}
+        return obj_cat_selected[:self.diffusion_bs], diff_dict
+
+    def prepare_boxes(self, triples, obj_embed, relation_cond, scene_ids=None, obj_boxes=None, obj_angles=None):
+        if obj_boxes is not None and obj_angles is not None:
+            obj_boxes = torch.cat((obj_boxes, obj_angles.reshape(-1,1)), dim=-1)
+        diff_dict = {'preds': triples, 'box': obj_boxes, 'uc_b': obj_embed,
+                     'c_b': relation_cond, "obj_id_to_scene": scene_ids}
+        return diff_dict
+
     def forward(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs, dec_objs_grained,
                 dec_triples, dec_boxes, dec_text_feat, dec_rel_feat, dec_objs_to_scene, missing_nodes, manipulated_nodes, dec_sdfs, dec_angles):
 
@@ -492,28 +540,30 @@ class Sg2ScDiffModel(nn.Module):
         else:
             latent_obj_vecs = latent_obj_vecs_
 
-        # relation embeddings -> diffusion
-        c_rel_feat_b = c_rel_feat_s = latent_obj_vecs
-        if self.s_l_separated:
-            c_rel_feat_s, _ = self.shape_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
-            c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
+        # # relation embeddings -> diffusion
+        c_rel_feat_s = latent_obj_vecs
+        # c_rel_feat_b = c_rel_feat_s = latent_obj_vecs
+        # if self.s_l_separated:
+        #     c_rel_feat_s, _ = self.shape_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
+        #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs, obj_embed_, pred_embed_, dec_triples)
         uc_rel_feat_s = self.rel_s_mlp(obj_embed_) # embedding + CLIP
         uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
-        uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
-        uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
-
+        # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
+        # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
+        #
         c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
         c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
-        c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
-        c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
+        # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
+        # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
-        obj_selected, diff_dict = self.select_sdfs_boxes(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_sdfs, dec_boxes, dec_angles, uc_rel_feat_s, c_rel_feat_s, uc_rel_feat_b, c_rel_feat_b, random=False)
+        obj_selected, shape_diff_dict = self.select_sdfs(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_sdfs, uc_rel_feat_s, c_rel_feat_s, random=False)
+        box_diff_dict = self.prepare_boxes(dec_triples, obj_embed_, obj_boxes=dec_boxes, obj_angles=dec_angles, relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
 
-        self.ShapeDiff.set_input(diff_dict)
+        self.ShapeDiff.set_input(shape_diff_dict)
         self.ShapeDiff.set_requires_grad([self.ShapeDiff.df], requires_grad=True)
         Shape_loss, Shape_loss_dict = self.ShapeDiff.forward()
 
-        self.LayoutDiff.set_input(diff_dict, max_sample=None)
+        self.LayoutDiff.set_input(box_diff_dict)
         self.LayoutDiff.set_requires_grad([self.LayoutDiff.df], requires_grad=True)
         Layout_loss, Layout_loss_dict = self.LayoutDiff.forward()
 
@@ -522,19 +572,19 @@ class Sg2ScDiffModel(nn.Module):
 
         return obj_selected, Shape_loss, Layout_loss, loss_dict
 
-    def forward_no_mani(self, objs, triples, enc, attributes):
-        mu, logvar = self.encoder(objs, triples, enc, attributes)
-        # reparameterization
-        std = torch.exp(0.5 * logvar)
-        # standard sampling
-        eps = torch.randn_like(std)
-        z = eps.mul(std).add_(mu)
-        keep = []
-        dec_man_enc_pred = self.decoder(z, objs, triples, attributes)
-        for i in range(len(dec_man_enc_pred)):
-            keep.append(1)
-        keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
-        return mu, logvar, dec_man_enc_pred, keep
+    # def forward_no_mani(self, objs, triples, enc, attributes):
+    #     mu, logvar = self.encoder(objs, triples, enc, attributes)
+    #     # reparameterization
+    #     std = torch.exp(0.5 * logvar)
+    #     # standard sampling
+    #     eps = torch.randn_like(std)
+    #     z = eps.mul(std).add_(mu)
+    #     keep = []
+    #     dec_man_enc_pred = self.decoder(z, objs, triples, attributes)
+    #     for i in range(len(dec_man_enc_pred)):
+    #         keep.append(1)
+    #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+    #     return mu, logvar, dec_man_enc_pred, keep
 
     def sampleShape(self, point_classes_idx, point_ae, mean_est_shape, cov_est_shape, dec_objs, dec_triplets,
                     attributes=None):

@@ -1,5 +1,5 @@
 hyper:
-    batch_size: 32
+    batch_size: 8
     gpu_ids: 0
     logs_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
     results_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
@@ -7,6 +7,9 @@ hyper:
     isTrain: True
     device: 'cuda'
     distributed: 0
+    lr_init: 1e-4
+    lr_step: [35000, 70000, 120000]
+    lr_evo: [5e-5, 1e-5, 5e-6]
 dataset:
     res: 64
     trunc_thres: 0.2
@@ -14,33 +17,38 @@ dataset:
 
 layout_branch:
     model: diffusion_scene_layout_ddpm
+    angle_dim: 2
     denoiser: unet1d
+    relation_condition: true
     denoiser_kwargs:
-        dim: 512
-        dim_mults: [ 1, 1, 1, 1 ]
-        channels: 65
-        class_dim: 25
-        angle_dim: 1
-        relation_condition: true
-        conditioning_key: crossattn
+        dims: 1 # 1D
+        in_channels: 8 # size(3)+loc(3)+sincos(2)
+        out_channels: 8 # same
+        model_channels: 512
+        channel_mult: [ 1,1,1,1]
+        num_res_blocks: 2
+        attention_resolutions: [ 4, 2 ]
+        num_heads: 8
+        # cond_model params
+        use_spatial_transformer: true
+        transformer_depth: 1
+        conditioning_key: 'crossattn'
+        concat_dim: 1280
         crossattn_dim: 1280
-        concat_dim: 0
-        bbox_separate: true
-        # self_condition: true
-        # merge_bbox: true
-        # modulate_time_context_instanclass: true
+        use_checkpoint: true
+
     diffusion_kwargs:
       schedule_type: 'linear'
       beta_start: 0.0001
       beta_end: 0.02
       time_num: 1000
-      loss_type: 'mse'
+      loss_type: 'diffuscene'
       model_mean_type: 'eps'
       model_var_type: 'fixedsmall'
       loss_separate: true
-      loss_iou: true
+      loss_iou: false
       iou_type: obb
-      train_stats_file: /media/ymxlzgy/Data/Dataset/FRONT/boxes_centered_stats_all_trainval.txt
+      train_stats_file: null
 
 shape_branch:
     model: sdfusion-txt2shape

@@ -261,7 +261,7 @@ def train():
             if args.network_type == 'cs++':
                 model.diff.ShapeDiff.update_loss()
 
-            loss = 100 * shape_loss + layout_loss
+            loss = shape_loss + layout_loss
 
             # optimize
             loss.backward()

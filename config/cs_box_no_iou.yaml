@@ -7,6 +7,9 @@ hyper:
     isTrain: True
     device: 'cuda'
     distributed: 0
+    lr_init: 1e-4
+    lr_step: [ 35000, 70000, 120000 ]
+    lr_evo: [ 5e-5, 1e-5, 5e-6 ]
 dataset:
     res: 64
     trunc_thres: 0.2

@@ -175,22 +175,17 @@ def validate_constrains_loop_w_changes(modelArgs, testdataloader, model, normali
     all_diversity_boxes = []
     all_diversity_angles = []
     all_diversity_chamfer = []
-    bbox_file = "/home/ymxlzgy/code/graphto3d_v2/GT/3dfront/cat_jid_trainval.json" if datasize == 'large' else "/home/ymxlzgy/code/graphto3d_v2/GT/3dfront/cat_jid_trainval_small.json"
+    bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
     with open(bbox_file, "r") as read_file:
         box_data = json.load(read_file)
-        if modelArgs['no_stool']:
-            box_data['chair'].update(box_data['stool'])
+        box_data['chair'].update(box_data['stool'])
 
     for i, data in enumerate(testdataloader, 0):
         try:
-            enc_objs, enc_triples, enc_tight_boxes, enc_objs_to_scene, enc_triples_to_scene = data['encoder']['objs'], \
+            enc_objs, enc_triples, enc_objs_to_scene, enc_triples_to_scene = data['encoder']['objs'], \
                                                                                               data['encoder']['tripltes'], \
-                                                                                              data['encoder']['boxes'], \
                                                                                               data['encoder']['obj_to_scene'], \
                                                                                               data['encoder']['triple_to_scene']
-            if 'feats' in data['encoder']:
-                encoded_enc_points = data['encoder']['feats']
-                encoded_enc_points = encoded_enc_points.float().cuda()
 
             dec_objs, dec_triples, dec_tight_boxes, dec_objs_to_scene, dec_triples_to_scene = data['decoder']['objs'], \
                                                                                               data['decoder']['tripltes'], \
@@ -208,45 +203,37 @@ def validate_constrains_loop_w_changes(modelArgs, testdataloader, model, normali
             print("Exception: skipping scene", e)
             continue
 
-        enc_objs, enc_triples, enc_tight_boxes = enc_objs.cuda(), enc_triples.cuda(), enc_tight_boxes.cuda()
+        enc_objs, enc_triples = enc_objs.cuda(), enc_triples.cuda()
         dec_objs, dec_triples, dec_tight_boxes = dec_objs.cuda(), dec_triples.cuda(), dec_tight_boxes.cuda()
         encoded_enc_rel_feat, encoded_enc_text_feat, encoded_dec_text_feat, encoded_dec_rel_feat = None, None, None, None
         if modelArgs['with_CLIP']:
             encoded_enc_text_feat, encoded_enc_rel_feat = data['encoder']['text_feats'].cuda(), data['encoder']['rel_feats'].cuda()
             encoded_dec_text_feat, encoded_dec_rel_feat = data['decoder']['text_feats'].cuda(), data['decoder']['rel_feats'].cuda()
 
-
-        model = model.eval()
-
         all_pred_boxes = []
 
-        enc_boxes = enc_tight_boxes[:, :6]
-        enc_angles = enc_tight_boxes[:, 6].long() - 1
-        enc_angles = torch.where(enc_angles > 0, enc_angles, torch.zeros_like(enc_angles))
-        enc_angles = torch.where(enc_angles < 24, enc_angles, torch.zeros_like(enc_angles))
-
-        attributes = None
-
         with torch.no_grad():
-            if model.type_ == "v1_box" or model.type_ == "v2_box" or model.type_ == "v2_full":
-                encoded_enc_points = None
-            (z_box, _), (z_shape, _) = model.encode_box_and_shape(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat, encoded_enc_points, enc_boxes, enc_angles, attributes)
 
             if args.manipulate:
-                boxes_pred, shapes_pred, keep = model.decoder_with_changes_boxes_and_shape(z_box, z_shape, dec_objs, dec_triples, encoded_dec_text_feat,
-                                                                                           encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes, manipulated_nodes,
-                                                                                           box_data=box_data, gen_shape=gen_shape)
-                if with_angles:
-                    boxes_pred, angles_pred = boxes_pred
+                data_dict, keep = model.sample_boxes_and_shape_with_changes(enc_objs, enc_triples, encoded_enc_text_feat,
+                                                                            encoded_enc_rel_feat, dec_objs, dec_triples,
+                                                                            encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                            dec_sdfs, manipulated_nodes, gen_shape=gen_shape)
             else:
-                boxes_pred, angles_pred, shapes_pred, keep = model.decoder_with_additions_boxes_and_shape(z_box, z_shape, dec_objs, dec_triples, encoded_dec_text_feat,
-                                                                                                          encoded_dec_rel_feat, dec_sdfs, attributes, missing_nodes,  manipulated_nodes,
-                                                                                                          gen_shape=gen_shape)
-                if with_angles and angles_pred is None:
-                    boxes_pred, angles_pred = boxes_pred
+                data_dict, keep = model.sample_boxes_and_shape_with_additions(enc_objs, enc_triples, encoded_enc_text_feat,
+                                                                              encoded_enc_rel_feat, dec_objs, dec_triples,
+                                                                              encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                              dec_sdfs, missing_nodes, gen_shape=gen_shape)
+
+            boxes_pred, angles_pred = torch.concat((data_dict['sizes'], data_dict['translations']), dim=-1), data_dict['angles']
+            shapes_pred = None
+            try:
+                shapes_pred = data_dict['shapes']
+            except:
+                print('no shape, only run layout branch.')
 
             if with_diversity:
-                assert model.type_ == 'v2_full' or model.type_ == 'v1_full'
+                assert model.type_ == 'cs++' or model.type_ == 'cs++_l'
                 print('calculating diversity...')
                 # Run multiple times to obtain diversity
                 # Only when a node was added or manipulated we run the diversity computation
@@ -428,9 +415,6 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
     all_pred_boxes_exp = {}
     bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
 
-    # from model.diff_utils.util_3d import init_mesh_renderer
-    # dist, elev, azim = 1.7, 20, 20
-    # sdf_renderer = init_mesh_renderer(image_size=256, dist=dist, elev=elev, azim=azim,device='cuda')
     with open(bbox_file, "r") as read_file:
         box_data = json.load(read_file)
         box_data['chair'].update(box_data['stool'])
@@ -476,7 +460,7 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
                 angles_pred = -180 + (torch.argmax(angles_pred, dim=1, keepdim=True) + 1)* 15.0 # angle (previously minus 1, now add it back)
                 boxes_pred_den = batch_torch_destandardize_box_params(boxes_pred, file=normalized_file) # mean, std
             else:
-                angles_pred = postprocess_sincos2arctan(angles_pred)
+                angles_pred = postprocess_sincos2arctan(angles_pred) / np.pi * 180
                 boxes_pred_den = descale_box_params(boxes_pred, file=normalized_file) # min, max
 
 
@@ -499,7 +483,7 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
         all_pred_boxes.append(boxes_pred_den.cpu().detach())
         if with_diversity:
             print('calculating diversity...')
-            assert model.type_ == 'v2_full' or model.type_ == 'v1_full'
+            assert model.type_ == 'cs++_l' or model.type_ == 'cs++'
             # Run multiple times to obtain diversities
             # Diversity results for this dataset sample
             boxes_diversity_sample, shapes_sample, angle_diversity_sample, diversity_retrieval_ids_sample = [], [], [], []
@@ -507,28 +491,13 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
                 # reseed(int(time.time()))
                 diversity_boxes, diversity_points = model.sample_box_and_shape(point_classes_idx, dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                                attributes=None, gen_shape=True)
-                if model.type_ == 'v2_full':
+                if model.type_ == 'cs++':
                     from model.diff_utils.util_3d import sdf_to_mesh
                     diversity_points = sdf_to_mesh(diversity_points, render_all=True)
                     diversity_points = diversity_points.verts_list()
                     diversity_points = sample_points(diversity_points, 5000) #TODO adjust number
-                elif model.type_ == 'v1_full':
-                    # TODO Complete shared shape decoding
-                    diversity_points, _ = model.decode_g2sv1(dec_objs, diversity_points, box_data, retrieval=True)
-                    from pytorch3d.structures import Meshes
-                    verts_list = []
-                    faces_list = []
-                    for mesh in diversity_points:
-                        verts = torch.tensor(mesh.vertices, dtype=torch.float32)
-                        faces = torch.tensor(mesh.faces, dtype=torch.int64)
-                        verts_list.append(verts)
-                        faces_list.append(faces)
-                    diversity_points = Meshes(verts=verts_list, faces=faces_list)
-                    diversity_points = diversity_points.verts_list()
-                    diversity_points = sample_points(diversity_points, 5000)  # TODO adjust number
 
-                if with_angles:
-                    diversity_boxes, diversity_angles = diversity_boxes
+                diversity_boxes, diversity_angles = diversity_boxes
 
                 # Computing shape diversity on canonical and normalized shapes
                 normalized_points = []
@@ -572,9 +541,11 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
                 # We use keep to filter changed nodes
                 boxes_diversity_sample.append(diversity_boxes)
 
-                if with_angles:
-                    # We use keep to filter changed nodes
-                    angle_diversity_sample.append(np.expand_dims(np.argmax(diversity_angles.cpu().numpy(), 1), 1) / 24. * 360.) # TODO change this maybe
+                # We use keep to filter changed nodes
+                if modelArgs['bin_angle']:
+                    angle_diversity_sample.append(np.expand_dims(np.argmax(diversity_angles.cpu().numpy(), 1), 1) / 24. * 360.)
+                else:
+                    angle_diversity_sample.append(np.expand_dims(np.argmax(diversity_angles.cpu().numpy(), 1), 1) / np.pi * 180.)  # TODO change this maybe
 
                 if len(normalized_points) > 0:
                     shapes_sample.append(torch.stack(normalized_points)) # keep has already been aplied for points
@@ -586,15 +557,15 @@ def validate_constrains_loop(modelArgs, testdataloader, model, epoch=None, norma
             if len(boxes_diversity_sample) > 0:
                 boxes_diversity_sample = torch.stack(boxes_diversity_sample, 1)
                 bs = boxes_diversity_sample.shape[0]
-                boxes_diversity_sample = batch_torch_denormalize_box_params(boxes_diversity_sample.reshape([-1, 6]),file=normalized_file).reshape([bs, -1, 6])
+                boxes_diversity_sample = descale_box_params(boxes_diversity_sample.reshape([-1, 6]),file=normalized_file).reshape([bs, -1, 6])
                 all_diversity_boxes += torch.std(boxes_diversity_sample, dim=1).cpu().numpy().tolist()
 
-                # Compute standard deviation for angle for this sample
+            # Compute standard deviation for angle for this sample
             if len(angle_diversity_sample) > 0:
                 angle_diversity_sample = np.stack(angle_diversity_sample, 1)
                 all_diversity_angles += [estimate_angular_std(d[:,0]) for d in angle_diversity_sample]
 
-                # Compute chamfer distances for shapes for this sample
+            # Compute chamfer distances for shapes for this sample
             if len(shapes_sample) > 0:
                 shapes_sample = torch.stack(shapes_sample, 1)
 
