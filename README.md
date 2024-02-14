@@ -1,4 +1,4 @@
-# CommonScenes
+# CommonScenesV2
 
 This is the official implementation of the paper **CommonScenes: Generating Commonsense 3D Indoor Scenes with Scene Graph Diffusion**. Based on diffusion model, we propose a method to generate entire 3D scene from scene graphs, encompassing its layout and 3D geometries holistically. 
 
