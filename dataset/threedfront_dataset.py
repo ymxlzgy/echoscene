@@ -487,7 +487,8 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                     else:
                         return -1
                 elif output['manipulate']['type'] == 'relationship':
-                    rel, original_triple, suc = self.modify_relship(output['encoder'], interpretable=True) # the same reason as above TODO should I omit the interpretable flag?
+                    # this should be modified from the decoder side, because during test we have to evaluate the real setting, and can make the change have the real meaning.
+                    rel, original_triple, suc = self.modify_relship(output['decoder'], interpretable=True)
                     if suc:
                         output['manipulate']['original_relship'] = (rel, original_triple)
                     else:
@@ -627,8 +628,9 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             graph['words'][idx] = graph['words'][idx].replace(self.relationships_dict_r[graph['triples'][idx][1]],self.relationships_dict_r[new_pred])
             graph['changed_id'] = idx
 
-            # this new_pred may even not exist. We can make things from the encoder side not existed, so that make sure decoder side is the real data.
-            graph['triples'][idx][1] = new_pred
+            # When interpretable is false, we can make things from the encoder side not existed, so that make sure decoder side is the real data.
+            # When interpretable is true, we can make things from the decoder side not existed, so that make sure what we test (encoder side) is the real data.
+            graph['triples'][idx][1] = new_pred # this new_pred may even not exist.
 
             did_change = True
 

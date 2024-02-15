@@ -517,10 +517,16 @@ class Sg2BoxDiffModel(nn.Module):
             # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
             box_diff_dict = self.prepare_input(dec_triples, obj_embed_, relation_cond=latent_obj_vecs)
-
             self.LayoutDiff.set_input(box_diff_dict)
-
-            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+            layout_dict = self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+        keep = []
+        for i in range(len(layout_dict["translations"])):
+            if i not in manipulated_nodes:
+                keep.append(1)
+            else:
+                keep.append(0)
+        keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+        return keep, layout_dict
 
     def sampleBoxes_with_additions(self, enc_objs, enc_triples, enc_text_feat, enc_rel_feat, dec_objs,
                                    dec_triples, dec_text_feat, dec_rel_feat, missing_nodes):
@@ -572,8 +578,15 @@ class Sg2BoxDiffModel(nn.Module):
             box_diff_dict = self.prepare_input(dec_triples, obj_embed_, relation_cond=latent_obj_vecs)
 
             self.LayoutDiff.set_input(box_diff_dict)
+            layout_dict = self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+        keep = []
+        for i in range(len(layout_dict["translations"])):
+            if i not in nodes_added:
+                keep.append(1)
+            else:
+                keep.append(0)
 
-            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+        return keep, layout_dict
 
     def state_dict(self, epoch, counter):
         state_dict_1_layout = super(Sg2BoxDiffModel, self).state_dict()

@@ -332,7 +332,7 @@ def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_bo
 
 
 def get_sdfusion_models(boxes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, no_stool=False, without_lamp=False):
-    sdfusion_model_path = "/media/ymxlzgy/Data/Dataset/3D-FRONT/txt2shape_results_latest"
+    sdfusion_model_path = "/media/ymxlzgy/Data/Dataset/FRONT/txt2shape_results_latest"
     mapping_full2simple = None
     obj_list = []
     colors = iter(colors)

@@ -47,14 +47,14 @@ def estimate_angular_std(degs):
     return std
 
 
-def denormalize(box_params, file=None, with_norm=True):
-    if with_norm:
-        return denormalize_box_params(box_params, file=file, params=box_params.shape[0])
-    else:
-        return box_params
+# def denormalize(box_params, file=None, with_norm=True):
+#     if with_norm:
+#         return denormalize_box_params(box_params, file=file, params=box_params.shape[0])
+#     else:
+#         return box_params
 
 
-def validate_constrains(triples, pred_boxes, keep, vocab, accuracy, strict=True, overlap_threshold=0.3):
+def validate_constrains(triples, pred_boxes, pred_angles, keep, vocab, accuracy, strict=True, overlap_threshold=0.3):
 
     param6 = pred_boxes.shape[1] == 6
     layout_boxes = pred_boxes
@@ -178,27 +178,25 @@ def validate_constrains(triples, pred_boxes, keep, vocab, accuracy, strict=True,
     return accuracy
 
 
-def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accuracy, file_dist=None, with_norm=True,
-                                strict=True, overlap_threshold=0.3):
+def validate_constrains_changes(triples, pred_boxes, pred_angles, keep, vocab, accuracy, strict=True, overlap_threshold=0.3):
 
     layout_boxes = pred_boxes
 
     for [s, p, o] in triples:
         if keep is None:
-            box_s = denormalize(layout_boxes[s.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
-            box_o = denormalize(layout_boxes[o.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
+            box_s = layout_boxes[s.item()].cpu().detach().numpy()
+            box_o = layout_boxes[o.item()].cpu().detach().numpy()
         else:
             if keep[s.item()] == 0 or keep[o.item()] == 0: # if any node is change we evaluate the changes
-                box_s = denormalize(layout_boxes[s.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
-                box_o = denormalize(layout_boxes[o.item()].cpu().detach().numpy(), file=file_dist, with_norm=with_norm)
+                box_s = layout_boxes[s.item()].cpu().detach().numpy()
+                box_o = layout_boxes[o.item()].cpu().detach().numpy()
             else:
                 continue
 
         if vocab["pred_idx_to_name"][p.item()][:-1] == "left":
             # z
             if box_s[5] - box_o[5] > -0.05 or (
-                    strict and box3d_iou(box_s, box_o, with_translation=True)[
-                0] > overlap_threshold):
+                    strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
                 accuracy['left'].append(0)
                 accuracy['total'].append(0)
             else:
@@ -206,8 +204,7 @@ def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accu
                 accuracy['total'].append(1)
         if vocab["pred_idx_to_name"][p.item()][:-1] == "right":
             if box_s[5] - box_o[5] < 0.05 or (
-                    strict and box3d_iou(box_s, box_o, with_translation=True)[
-                0] > overlap_threshold):
+                    strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
                 accuracy['right'].append(0)
                 accuracy['total'].append(0)
             else:
@@ -215,8 +212,7 @@ def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accu
                 accuracy['total'].append(1)
         if vocab["pred_idx_to_name"][p.item()][:-1] == "front":
             if box_s[3] - box_o[3] < -0.05 or (
-                    strict and box3d_iou(box_s, box_o, with_translation=True)[
-                0] > overlap_threshold):
+                    strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
                 accuracy['front'].append(0)
                 accuracy['total'].append(0)
             else:
@@ -224,8 +220,7 @@ def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accu
                 accuracy['total'].append(1)
         if vocab["pred_idx_to_name"][p.item()][:-1] == "behind":
             if box_s[3] - box_o[3] > 0.05 or (
-                    strict and box3d_iou(box_s, box_o, with_translation=True)[
-                0] > overlap_threshold):
+                    strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
                 accuracy['behind'].append(0)
                 accuracy['total'].append(0)
             else:
