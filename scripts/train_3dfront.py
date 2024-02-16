@@ -202,6 +202,7 @@ def train():
     # instantiate the model
     diff_cfg = OmegaConf.load(args.diff_yaml)
     diff_cfg.layout_branch.diffusion_kwargs.train_stats_file = dataset.box_normalized_stats
+    diff_cfg.layout_branch.denoiser_kwargs.using_clip = args.with_CLIP
     model = SGDiff(type=args.network_type, diff_opt=diff_cfg, vocab=dataset.vocab,
                 replace_latent=args.replace_latent, with_changes=args.with_changes, residual=args.residual,
                 gconv_pooling=args.pooling, with_angles=args.with_angles, clip=args.with_CLIP, separated=args.separated)

@@ -21,9 +21,6 @@ from cleanfid import fid
 
 import shutil
 
-from scene_synthesis.datasets.splits_builder import CSVSplitsBuilder
-from scene_synthesis.datasets.threed_front import CachedThreedFront
-
 
 class ThreedFrontRenderDataset(object):
     def __init__(self, dataset):
@@ -82,7 +79,7 @@ def main(argv):
         # ))
     else:
         args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/sdf_fov90_h8_wo_lamp_no_stool/small/test"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/g2sv2_180_crossattn_small_no_stool_backup/render_imgs/v2"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/CS_box_new_new_hybrid/vis/1900/txt2shape/render_imgs"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,
@@ -90,7 +87,7 @@ def main(argv):
         # ))
 
     print("Generating temporary a folder with test_real images...")
-    path_to_test_real = "/media/ymxlzgy/Data/graphto3d_v2_test/fid_kid_tmp/real" # /tmp/test_real
+    path_to_test_real = "/media/ymxlzgy/Data/model_savedir/fid_kid_tmp/real" # /tmp/test_real
     if not os.path.exists(path_to_test_real):
         os.makedirs(path_to_test_real)
     real_images = [
@@ -105,7 +102,7 @@ def main(argv):
     print('number of real images :', len(real_images))
 
     print("Generating temporary a folder with test_fake images...")
-    path_to_test_fake = "/media/ymxlzgy/Data/graphto3d_v2_test/fid_kid_tmp/fake" #/tmp/test_fake/
+    path_to_test_fake = "/media/ymxlzgy/Data/model_savedir/fid_kid_tmp/fake" #/tmp/test_fake/
     if not os.path.exists(path_to_test_fake):
         os.makedirs(path_to_test_fake)
 

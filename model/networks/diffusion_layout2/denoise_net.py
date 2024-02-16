@@ -500,7 +500,8 @@ class UNet1DModel(nn.Module):
         transformer_depth=1,              # custom transformer support
         concat_dim=None,                 # custom transformer support
         crossattn_dim=None,  # custom transformer support
-        conditioning_key='crossattn'
+        conditioning_key='crossattn',
+        using_clip=True
     ):
         super().__init__()
         # import pdb; pdb.set_trace()
@@ -525,6 +526,7 @@ class UNet1DModel(nn.Module):
             assert num_heads != -1, 'Either num_heads or num_head_channels has to be set'
 
         self.conditioning_key = conditioning_key
+        self.using_clip = using_clip
         self.in_channels = in_channels + concat_dim if self.conditioning_key in ['concat','hybrid'] else in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
@@ -713,7 +715,9 @@ class UNet1DModel(nn.Module):
         # GCN part
         gconv_dim = 64
         gconv_hidden_dim = gconv_dim * 4
-        add_dim = 512
+        add_dim = 0
+        if self.using_clip:
+            add_dim = 512
         self.pred_embeddings = nn.Embedding(16, gconv_dim * 2)
         self.box_embeddings = nn.Linear(in_channels, gconv_dim)
         self.box_embeddings.apply(_init_weights)

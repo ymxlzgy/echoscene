@@ -546,6 +546,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         node_removed = graph['objs'].pop(node_id)
         if self.with_feats:
             graph['feats'].pop(node_id)
+        node_clip_removed = None
         if self.with_CLIP:
             node_clip_removed = graph['text_feats'].pop(node_id)
 
