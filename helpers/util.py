@@ -83,7 +83,7 @@ def get_closest_furniture_to_box(box_dict, query_size):
     return ids[id_min]
 
 
-def get_textured_objects(boxes, datasize, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
+def get_database_objects(boxes, datasize, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
     os.makedirs(mesh_dir, exist_ok=True)
     bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval_small.json"
     colors = iter(colors)
@@ -188,36 +188,36 @@ def fit_shapes_to_box_v2(obj, box, degrees=False):
     box_points += np.expand_dims(t, 0)
     return box_points, obj
 
-def fit_shapes_to_box_v1(obj, box, degrees=False):
-    l, h, w, px, py, pz, angle = box
-    box_points = []
-    for i in [-1, 1]:
-        for j in [0, 1]:
-            for k in [-1, 1]:
-                box_points.append([l.item() / 2 * i, h.item() * j, w.item() / 2 * k])
-
-    bounding_box = obj.bounding_box
-    bottom_center = bounding_box.bounds[0] + (bounding_box.extents / 2)
-    bottom_center[1] = bounding_box.bounds[0][1]
-    rotation_matrix = trimesh.transformations.rotation_matrix(0, [0,1,0])
-    translation_matrix = trimesh.transformations.translation_matrix(-bottom_center)
-    transform = np.dot(translation_matrix, rotation_matrix)
-    obj.apply_transform(transform)
-
-    R = get_rotation_3dfront(angle.item(), degree=degrees)
-    R_inv = np.linalg.inv(R)
-    t = np.array([px.item(), py.item(), pz.item()])
-    T = np.concatenate((R_inv,t.reshape(-1,1)),axis=1)
-    T = np.concatenate((T,np.array([0,0,0,1]).reshape(1,-1)),axis=0)
-    vertices = np.array(obj.vertices)
-    shape_size = np.max(vertices, axis=0) - np.min(vertices, axis=0)
-    obj = obj.apply_scale(1 / shape_size)
-    obj = obj.apply_scale([l.item(), h.item(), w.item()])
-    obj = obj.apply_transform(T)
-    box_points = np.asarray(box_points)
-    box_points = box_points.dot(R)
-    box_points += np.expand_dims(t, 0)
-    return box_points, obj
+# def fit_shapes_to_box_v1(obj, box, degrees=False):
+#     l, h, w, px, py, pz, angle = box
+#     box_points = []
+#     for i in [-1, 1]:
+#         for j in [0, 1]:
+#             for k in [-1, 1]:
+#                 box_points.append([l.item() / 2 * i, h.item() * j, w.item() / 2 * k])
+#
+#     bounding_box = obj.bounding_box
+#     bottom_center = bounding_box.bounds[0] + (bounding_box.extents / 2)
+#     bottom_center[1] = bounding_box.bounds[0][1]
+#     rotation_matrix = trimesh.transformations.rotation_matrix(0, [0,1,0])
+#     translation_matrix = trimesh.transformations.translation_matrix(-bottom_center)
+#     transform = np.dot(translation_matrix, rotation_matrix)
+#     obj.apply_transform(transform)
+#
+#     R = get_rotation_3dfront(angle.item(), degree=degrees)
+#     R_inv = np.linalg.inv(R)
+#     t = np.array([px.item(), py.item(), pz.item()])
+#     T = np.concatenate((R_inv,t.reshape(-1,1)),axis=1)
+#     T = np.concatenate((T,np.array([0,0,0,1]).reshape(1,-1)),axis=0)
+#     vertices = np.array(obj.vertices)
+#     shape_size = np.max(vertices, axis=0) - np.min(vertices, axis=0)
+#     obj = obj.apply_scale(1 / shape_size)
+#     obj = obj.apply_scale([l.item(), h.item(), w.item()])
+#     obj = obj.apply_transform(T)
+#     box_points = np.asarray(box_points)
+#     box_points = box_points.dot(R)
+#     box_points += np.expand_dims(t, 0)
+#     return box_points, obj
 
 def trimeshes_to_pytorch3d(meshes):
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -266,34 +266,34 @@ def pytorch3d_to_trimesh(pytorch3d_mesh):
     tri_mesh.invert()
     return tri_mesh
 
-def get_generated_models_v1(boxes, shapes, cat_ids, mesh_dir, classes, render_boxes=False, colors=None, without_lamp=False):
-    colors = iter(colors)
-    trimesh_meshes = iter(shapes)
-    obj_list = []
-    lamp_mesh_list = []
-    raw_obj_list = []
-    instance_id = 1
-    for j in range(0, boxes.shape[0]):
-        query_label = classes[cat_ids[j]].strip('\n')
-        if query_label == '_scene_' or query_label == 'floor':
-            continue
-        obj = next(trimesh_meshes)
-        color = next(colors)
-        obj.visual.vertex_colors = color
-        obj.visual.face_colors = color
-        raw_obj_list.append(obj.copy())
-        obj.export(os.path.join(mesh_dir, query_label + '_' + str(cat_ids[j]) + "_" + str(instance_id) + ".obj"))
-        instance_id += 1
-
-        box_points, obj = fit_shapes_to_box_v1(obj, boxes[j], degrees=True)
-        obj_list.append(obj)
-        if query_label == 'lamp' and without_lamp:
-            lamp_mesh_list.append(obj_list.pop())
-
-
-        if render_boxes:
-            obj_list.append(create_bbox_marker(box_points, color=color))
-    return lamp_mesh_list, obj_list, raw_obj_list
+# def get_generated_models_v1(boxes, shapes, cat_ids, mesh_dir, classes, render_boxes=False, colors=None, without_lamp=False):
+#     colors = iter(colors)
+#     trimesh_meshes = iter(shapes)
+#     obj_list = []
+#     lamp_mesh_list = []
+#     raw_obj_list = []
+#     instance_id = 1
+#     for j in range(0, boxes.shape[0]):
+#         query_label = classes[cat_ids[j]].strip('\n')
+#         if query_label == '_scene_' or query_label == 'floor':
+#             continue
+#         obj = next(trimesh_meshes)
+#         color = next(colors)
+#         obj.visual.vertex_colors = color
+#         obj.visual.face_colors = color
+#         raw_obj_list.append(obj.copy())
+#         obj.export(os.path.join(mesh_dir, query_label + '_' + str(cat_ids[j]) + "_" + str(instance_id) + ".obj"))
+#         instance_id += 1
+#
+#         box_points, obj = fit_shapes_to_box_v1(obj, boxes[j], degrees=True)
+#         obj_list.append(obj)
+#         if query_label == 'lamp' and without_lamp:
+#             lamp_mesh_list.append(obj_list.pop())
+#
+#
+#         if render_boxes:
+#             obj_list.append(create_bbox_marker(box_points, color=color))
+#     return lamp_mesh_list, obj_list, raw_obj_list
 
 def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
     mesh_gen = sdf_to_mesh(shapes,render_all=True)
@@ -362,7 +362,6 @@ def get_sdfusion_models(boxes, cat_ids, classes, mesh_dir, render_boxes=False, c
         raw_obj_list.append(obj.copy())
         obj.export(os.path.join(mesh_dir, query_label + '_' + str(cat_ids[j]) + "_" + str(instance_id)+".obj"))
         instance_id += 1
-
         box_points, obj = fit_shapes_to_box_v2(obj, boxes[j], degrees=True)
         obj_list.append(obj)
         if query_label == 'lamp' and without_lamp:

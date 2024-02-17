@@ -51,10 +51,10 @@ layout_branch:
       train_stats_file: null
 
 shape_branch:
-    model: sdfusion-txt2shape
+    model: sdfusion-txt2shape_concat_mp
     sampling: greedy
     ckpt: null
-    df_cfg: ../config/sdfusion-txt2shape.yaml
+    df_cfg: ../config/sdfusion-txt2shape_concat_mp.yaml
     ddim_steps: 100
     ddim_eta: 0.0
     uc_scale: 3.0

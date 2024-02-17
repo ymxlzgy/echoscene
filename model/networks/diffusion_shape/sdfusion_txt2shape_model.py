@@ -233,9 +233,10 @@ class SDFusionText2ShapeModel(BaseModel):
         self.rel = input['c_s']
         B = self.x.shape[0]
         self.uc_rel = input['uc_s']
+        self.triples = input.get('triples', None)
+
         if self.df.conditioning_key == 'concat':
             self.rel = self.rel.view(B,-1,16,16,16)
-            self.uc_rel = self.uc_rel.view(B,-1,16,16,16)
         if max_sample is not None:
             self.x = self.x[:max_sample]
             self.rel = self.rel[:max_sample]
@@ -262,7 +263,7 @@ class SDFusionText2ShapeModel(BaseModel):
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
     # check: ddpm.py, line 891
-    def apply_model(self, x_noisy, t, cond, return_ids=False):
+    def apply_model(self, x_noisy, obj_embed, triples, t, cond, return_ids=False):
         if isinstance(cond, dict):
             # hybrid case, cond is exptected to be a dict
             pass
@@ -273,7 +274,7 @@ class SDFusionText2ShapeModel(BaseModel):
             cond = {key: cond}
 
         # eps
-        out = self.df(x_noisy, t, **cond)
+        out = self.df(x_noisy, obj_embed, triples, t, **cond)
 
         if isinstance(out, tuple) and not return_ids:
             return out[0]
@@ -298,12 +299,12 @@ class SDFusionText2ShapeModel(BaseModel):
     # check: ddpm.py, line 871 forward
     # check: p_losses
     # check: q_sample, apply_model
-    def p_losses(self, x_start, cond, t, noise=None):
+    def p_losses(self, x_start, obj_embed, triples, cond, t, noise=None):
 
         noise = default(noise, lambda: torch.randn_like(x_start))
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
         # predict noise (eps) or x0
-        model_output = self.apply_model(x_noisy, t, cond)
+        model_output = self.apply_model(x_noisy, obj_embed, triples, t, cond)
 
         loss_dict = {}
 
@@ -339,7 +340,12 @@ class SDFusionText2ShapeModel(BaseModel):
 
         self.switch_train()
 
-        c_rel = self.rel # B, 77, 1280
+        obj_embed = self.uc_rel
+        c_rel = self.rel
+        try:
+            triples = self.triples
+        except:
+            triples = None
 
         # 1. encode to latent
         #    encoder, quant_conv, but do not quantize
@@ -349,7 +355,7 @@ class SDFusionText2ShapeModel(BaseModel):
 
         # 2. do diffusion's forward
         t = torch.randint(0, self.num_timesteps, (z.shape[0],), device=self.device).long()
-        z_noisy, target, loss, loss_dict = self.p_losses(z, c_rel, t)
+        z_noisy, target, loss, loss_dict = self.p_losses(z, obj_embed, triples, c_rel, t)
 
         self.loss_df = loss
         self.loss_dict = loss_dict

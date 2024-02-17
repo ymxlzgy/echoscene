@@ -8,6 +8,7 @@ from model.networks.diffusion_shape.diff_utils.distributed import get_rank
 from model.networks.diffusion_layout2.diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
 import numpy as np
 from helpers.lr_scheduler import *
+from omegaconf import OmegaConf
 
 
 class Sg2ScDiffModel(nn.Module):
@@ -91,6 +92,7 @@ class Sg2ScDiffModel(nn.Module):
             }
             self.gconv_net_ec_rel_s = GraphTripleConvNet(**gconv_kwargs_ec_rel)
             self.gconv_net_ec_rel_l = GraphTripleConvNet(**gconv_kwargs_ec_rel)
+
         ## shape branch
         self.ShapeDiff = SDFusionText2ShapeModel(self.diff_cfg)
         self.visualizer = Visualizer(self.diff_cfg) # visualizer
@@ -100,6 +102,10 @@ class Sg2ScDiffModel(nn.Module):
         if self.ShapeDiff.df.conditioning_key == 'concat':
             rel_s_layers = [gconv_dim * 2 + add_dim, 1280, 4096]
         self.rel_s_mlp = make_mlp(rel_s_layers, batch_norm=mlp_normalization, norelu=True)
+        self.sample_obj = self.diff_cfg.shape_branch.sampling
+        shape_df_conf = OmegaConf.load(self.diff_cfg.shape_branch.df_cfg)
+        if shape_df_conf.unet.params.messsage_passing:
+            assert self.sample_obj == 'greedy', 'if messsage_passing in the shape branch, greedy sampling is the only option for now.'
 
         ## layout branch
         self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg)
@@ -109,9 +115,8 @@ class Sg2ScDiffModel(nn.Module):
         #     l_concat_dim = self.diff_cfg.layout_branch.denoiser_kwargs.concat_dim
         #     rel_l_layers = [gconv_dim * 2 + add_dim, 1280, l_concat_dim]
         # self.rel_l_mlp = make_mlp(rel_l_layers, batch_norm=mlp_normalization, norelu=True)
-        #
-        #
-        # # initialization
+
+        # initialization
         self.rel_s_mlp.apply(_init_weights)
         # self.rel_l_mlp.apply(_init_weights)
         self.lr_init = self.diff_cfg.hyper.lr_init
@@ -362,131 +367,179 @@ class Sg2ScDiffModel(nn.Module):
 
         return torch.tensor(selected_object_indices)
 
-    def select_sdfs_boxes(self, dec_objs_to_scene, obj_cats, obj_cats_grained, sdfs, boxes, angles, s_feat_ucon, s_feat_con, b_feat_ucon, b_feat_con, random=False):
-        assert sdfs.shape[0] == boxes.shape[0] # should be the number of all objects
+    def find_closest_sublist(self, nums, num):
+        # Create a list of (value, index) tuples
+        nums_indexed = [(val, idx) for idx, val in enumerate(nums)]
+        # Sort the list by value
+        nums_indexed.sort(reverse=True)
+
+        # Initialize variables
+        current_sum = 0
+        selected_indices = []
+        selected_values = []
+
+        # Iterate through the sorted list
+        for value, index in nums_indexed:
+            if current_sum + value <= num:
+                current_sum += value
+                selected_indices.append(index)
+                selected_values.append(value)
+                if current_sum == num:
+                    break  # Found the exact match
+
+        # Return the indices and values of the selected elements
+        # Sort the indices to return them in the original order
+        return sorted(selected_indices), selected_values, current_sum
+
+    # def select_sdfs_boxes(self, dec_objs_to_scene, obj_cats, obj_cats_grained, sdfs, boxes, angles, s_feat_ucon, s_feat_con, b_feat_ucon, b_feat_con, random=False):
+    #     assert sdfs.shape[0] == boxes.shape[0] # should be the number of all objects
+    #     dec_objs_to_scene = dec_objs_to_scene.detach().cpu().numpy()
+    #     batch_size = np.max(dec_objs_to_scene) + 1
+    #     scene_ids = []
+    #     sdf_selected = []
+    #     box_selected = []
+    #     angle_selected = []
+    #     uc_rel_s_selected = []
+    #     c_rel_s_selected = []
+    #     uc_rel_b_selected = []
+    #     c_rel_b_selected = []
+    #     obj_cat_selected = []
+    #     num_obj = int(np.ceil(self.diffusion_bs / batch_size)) # how many objects should be picked in a scene
+    #     for i in range(batch_size):
+    #         # sdf, node classes, node fine_grained classes in the current scene
+    #         sdf_candidates = sdfs[np.where(dec_objs_to_scene == i)[0]]
+    #         box_candidates = boxes[np.where(dec_objs_to_scene == i)[0]]
+    #         angle_candidates = angles[np.where(dec_objs_to_scene == i)[0]]
+    #         obj_cat = obj_cats[np.where(dec_objs_to_scene == i)[0]]
+    #         obj_cat_grained = obj_cats_grained[np.where(dec_objs_to_scene == i)[0]]
+    #
+    #         # relation embeddings conditioning the shape diffusion in the current scene
+    #         uc_rel_s = s_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
+    #         c_rel_s = s_feat_con[np.where(dec_objs_to_scene == i)[0]]
+    #
+    #         # relation embeddings conditioning the layout diffusion in the current scene
+    #         uc_rel_b = b_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
+    #         c_rel_b = b_feat_con[np.where(dec_objs_to_scene == i)[0]]
+    #
+    #         length = obj_cat.size(0)
+    #         zeros_tensor = torch.zeros_like(sdf_candidates[0])
+    #         mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
+    #         object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
+    #         all_inds = torch.arange(box_candidates[:-1,:].shape[0]) # all bbox indices except __scene__(for layout branch)
+    #         if random:
+    #             # randomly choose num_obj elements for shape branch
+    #             perm_obj = torch.randperm(len(object_inds))
+    #             random_obj_inds = object_inds[perm_obj[:num_obj]]
+    #             sdf_selected.append(sdf_candidates[random_obj_inds])
+    #             uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
+    #             c_rel_s_selected.append(c_rel_s[random_obj_inds])
+    #             obj_cat_selected.append(obj_cat[random_obj_inds])
+    #
+    #             # randomly choose num_obj elements for layout branch
+    #             perm = torch.randperm(len(all_inds))
+    #             random_obj_inds = all_inds[perm[:num_obj]]
+    #             box_selected.append(box_candidates[random_obj_inds])
+    #             angle_selected.append(angle_candidates[random_obj_inds])
+    #             uc_rel_b_selected.append(uc_rel_b[random_obj_inds])
+    #             c_rel_b_selected.append(c_rel_b[random_obj_inds])
+    #         else:
+    #             ## balance every fine-grained category.
+    #             # shape branch excludes the floor
+    #             selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
+    #             sdf_selected.append(sdf_candidates[object_inds][selected_inds])
+    #             uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
+    #             c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
+    #             obj_cat_selected.append(obj_cat[object_inds][selected_inds])
+    #
+    #             # layout branch includes the floor
+    #             selected_inds = self.balance_objects(obj_cat_grained[all_inds], obj_cat[all_inds], num_obj, shape_branch=False) # selected_inds are indices of obj_cat_grained[all_inds]
+    #             box_selected.append(box_candidates[all_inds][selected_inds])
+    #             angle_selected.append(angle_candidates[all_inds][selected_inds])
+    #             uc_rel_b_selected.append(uc_rel_b[all_inds][selected_inds])
+    #             c_rel_b_selected.append(c_rel_b[all_inds][selected_inds])
+    #
+    #             # essential_names = self.obj_classes_grained
+    #         scene_ids.append(np.repeat(i,num_obj))
+    #
+    #     sdf_selected = torch.cat(sdf_selected, dim=0).cuda()
+    #     box_selected = torch.cat(box_selected, dim=0).cuda()
+    #     angle_selected = torch.cat(angle_selected, dim=0).unsqueeze(1).cuda()
+    #     box_selected = torch.cat((box_selected, angle_selected), dim=1)
+    #     uc_rel_s_selected = torch.cat(uc_rel_s_selected, dim=0).cuda()
+    #     c_rel_s_selected = torch.cat(c_rel_s_selected, dim=0).cuda()
+    #     uc_rel_b_selected = torch.cat(uc_rel_b_selected, dim=0).cuda()
+    #     c_rel_b_selected = torch.cat(c_rel_b_selected, dim=0).cuda()
+    #     obj_cat_selected = torch.cat(obj_cat_selected, dim=0)
+    #     scene_ids = np.concatenate(scene_ids, axis=0)
+    #     diff_dict = {'sdf': sdf_selected[:self.diffusion_bs], 'uc_s': uc_rel_s_selected[:self.diffusion_bs],
+    #                  'c_s': c_rel_s_selected[:self.diffusion_bs], 'box': box_selected[:self.diffusion_bs],
+    #                  'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'c_b': c_rel_b_selected[:self.diffusion_bs],
+    #                  "scene_ids": scene_ids[:self.diffusion_bs]}
+    #     return obj_cat_selected[:self.diffusion_bs], diff_dict
+
+    def select_sdfs(self, dec_objs_to_scene, obj_cats, obj_cats_grained, triples, sdfs, s_feat_ucon, s_feat_con, sample_type='balance'):
         dec_objs_to_scene = dec_objs_to_scene.detach().cpu().numpy()
         batch_size = np.max(dec_objs_to_scene) + 1
         scene_ids = []
         sdf_selected = []
-        box_selected = []
-        angle_selected = []
-        uc_rel_s_selected = []
-        c_rel_s_selected = []
-        uc_rel_b_selected = []
-        c_rel_b_selected = []
-        obj_cat_selected = []
-        num_obj = int(np.ceil(self.diffusion_bs / batch_size)) # how many objects should be picked in a scene
-        for i in range(batch_size):
-            # sdf, node classes, node fine_grained classes in the current scene
-            sdf_candidates = sdfs[np.where(dec_objs_to_scene == i)[0]]
-            box_candidates = boxes[np.where(dec_objs_to_scene == i)[0]]
-            angle_candidates = angles[np.where(dec_objs_to_scene == i)[0]]
-            obj_cat = obj_cats[np.where(dec_objs_to_scene == i)[0]]
-            obj_cat_grained = obj_cats_grained[np.where(dec_objs_to_scene == i)[0]]
-
-            # relation embeddings conditioning the shape diffusion in the current scene
-            uc_rel_s = s_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
-            c_rel_s = s_feat_con[np.where(dec_objs_to_scene == i)[0]]
-
-            # relation embeddings conditioning the layout diffusion in the current scene
-            uc_rel_b = b_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
-            c_rel_b = b_feat_con[np.where(dec_objs_to_scene == i)[0]]
-
-            length = obj_cat.size(0)
-            zeros_tensor = torch.zeros_like(sdf_candidates[0])
-            mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
-            object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
-            all_inds = torch.arange(box_candidates[:-1,:].shape[0]) # all bbox indices except __scene__(for layout branch)
-            if random:
-                # randomly choose num_obj elements for shape branch
-                perm_obj = torch.randperm(len(object_inds))
-                random_obj_inds = object_inds[perm_obj[:num_obj]]
-                sdf_selected.append(sdf_candidates[random_obj_inds])
-                uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
-                c_rel_s_selected.append(c_rel_s[random_obj_inds])
-                obj_cat_selected.append(obj_cat[random_obj_inds])
-
-                # randomly choose num_obj elements for layout branch
-                perm = torch.randperm(len(all_inds))
-                random_obj_inds = all_inds[perm[:num_obj]]
-                box_selected.append(box_candidates[random_obj_inds])
-                angle_selected.append(angle_candidates[random_obj_inds])
-                uc_rel_b_selected.append(uc_rel_b[random_obj_inds])
-                c_rel_b_selected.append(c_rel_b[random_obj_inds])
-            else:
-                ## balance every fine-grained category.
-                # shape branch excludes the floor
-                selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
-                sdf_selected.append(sdf_candidates[object_inds][selected_inds])
-                uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
-                c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
-                obj_cat_selected.append(obj_cat[object_inds][selected_inds])
-
-                # layout branch includes the floor
-                selected_inds = self.balance_objects(obj_cat_grained[all_inds], obj_cat[all_inds], num_obj, shape_branch=False) # selected_inds are indices of obj_cat_grained[all_inds]
-                box_selected.append(box_candidates[all_inds][selected_inds])
-                angle_selected.append(angle_candidates[all_inds][selected_inds])
-                uc_rel_b_selected.append(uc_rel_b[all_inds][selected_inds])
-                c_rel_b_selected.append(c_rel_b[all_inds][selected_inds])
-
-                # essential_names = self.obj_classes_grained
-            scene_ids.append(np.repeat(i,num_obj))
-
-        sdf_selected = torch.cat(sdf_selected, dim=0).cuda()
-        box_selected = torch.cat(box_selected, dim=0).cuda()
-        angle_selected = torch.cat(angle_selected, dim=0).unsqueeze(1).cuda()
-        box_selected = torch.cat((box_selected, angle_selected), dim=1)
-        uc_rel_s_selected = torch.cat(uc_rel_s_selected, dim=0).cuda()
-        c_rel_s_selected = torch.cat(c_rel_s_selected, dim=0).cuda()
-        uc_rel_b_selected = torch.cat(uc_rel_b_selected, dim=0).cuda()
-        c_rel_b_selected = torch.cat(c_rel_b_selected, dim=0).cuda()
-        obj_cat_selected = torch.cat(obj_cat_selected, dim=0)
-        scene_ids = np.concatenate(scene_ids, axis=0)
-        diff_dict = {'sdf': sdf_selected[:self.diffusion_bs], 'uc_s': uc_rel_s_selected[:self.diffusion_bs],
-                     'c_s': c_rel_s_selected[:self.diffusion_bs], 'box': box_selected[:self.diffusion_bs],
-                     'uc_b': uc_rel_b_selected[:self.diffusion_bs], 'c_b': c_rel_b_selected[:self.diffusion_bs],
-                     "scene_ids": scene_ids[:self.diffusion_bs]}
-        return obj_cat_selected[:self.diffusion_bs], diff_dict
-
-    def select_sdfs(self, dec_objs_to_scene, obj_cats, obj_cats_grained, sdfs, s_feat_ucon, s_feat_con, random=False):
-        dec_objs_to_scene = dec_objs_to_scene.detach().cpu().numpy()
-        batch_size = np.max(dec_objs_to_scene) + 1
-        scene_ids = []
-        sdf_selected = []
         uc_rel_s_selected = []
         c_rel_s_selected = []
         obj_cat_selected = []
-        num_obj = int(np.ceil(self.diffusion_bs / batch_size)) # how many objects should be picked in a scene
-        for i in range(batch_size):
-            # sdf, node classes, node fine_grained classes in the current scene
-            sdf_candidates = sdfs[np.where(dec_objs_to_scene == i)[0]]
-            obj_cat = obj_cats[np.where(dec_objs_to_scene == i)[0]]
-            obj_cat_grained = obj_cats_grained[np.where(dec_objs_to_scene == i)[0]]
+        triples_selected= []
+        if sample_type != 'greedy':
+            num_obj = int(np.ceil(self.diffusion_bs / batch_size)) # how many objects should be picked in a scene
+            for i in range(batch_size):
+                scene_i_ids = np.where(dec_objs_to_scene == i)[0]
+                # sdf, node classes, node fine_grained classes in the current scene
+                sdf_candidates = sdfs[scene_i_ids]
+                obj_cat = obj_cats[scene_i_ids]
+                obj_cat_grained = obj_cats_grained[scene_i_ids]
 
-            # relation embeddings conditioning the shape diffusion in the current scene
-            uc_rel_s = s_feat_ucon[np.where(dec_objs_to_scene == i)[0]]
-            c_rel_s = s_feat_con[np.where(dec_objs_to_scene == i)[0]]
+                # relation embeddings conditioning the shape diffusion in the current scene
+                uc_rel_s = s_feat_ucon[scene_i_ids]
+                c_rel_s = s_feat_con[scene_i_ids]
 
-            zeros_tensor = torch.zeros_like(sdf_candidates[0])
-            mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
-            object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
-            if random:
-                # randomly choose num_obj elements for shape branch
-                perm_obj = torch.randperm(len(object_inds))
-                random_obj_inds = object_inds[perm_obj[:num_obj]]
-                sdf_selected.append(sdf_candidates[random_obj_inds])
-                uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
-                c_rel_s_selected.append(c_rel_s[random_obj_inds])
-                obj_cat_selected.append(obj_cat[random_obj_inds])
-            else:
-                ## balance every fine-grained category.
-                # shape branch excludes the floor
-                selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
-                sdf_selected.append(sdf_candidates[object_inds][selected_inds])
-                uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
-                c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
-                obj_cat_selected.append(obj_cat[object_inds][selected_inds])
-            scene_ids.append(np.repeat(i,num_obj))
+                zeros_tensor = torch.zeros_like(sdf_candidates[0])
+                mask = torch.ne(sdf_candidates, zeros_tensor) # find out the objects which are not the floor
+                object_inds = torch.unique(torch.where(mask)[0]) # non-floor non-__scene__ object indices (for shape branch)
+                if sample_type=='random':
+                    # randomly choose num_obj elements for shape branch
+                    perm_obj = torch.randperm(len(object_inds))
+                    random_obj_inds = object_inds[perm_obj[:num_obj]]
+                    sdf_selected.append(sdf_candidates[random_obj_inds])
+                    uc_rel_s_selected.append(uc_rel_s[random_obj_inds])
+                    c_rel_s_selected.append(c_rel_s[random_obj_inds])
+                    obj_cat_selected.append(obj_cat[random_obj_inds])
+                elif sample_type=='balance':
+                    ## balance every fine-grained category.
+                    # shape branch excludes the floor
+                    selected_inds = self.balance_objects(obj_cat_grained[object_inds], obj_cat[object_inds], num_obj, shape_branch=True) # selected_inds are indices of obj_cat_grained[object_inds]
+                    sdf_selected.append(sdf_candidates[object_inds][selected_inds])
+                    uc_rel_s_selected.append(uc_rel_s[object_inds][selected_inds])
+                    c_rel_s_selected.append(c_rel_s[object_inds][selected_inds])
+                    obj_cat_selected.append(obj_cat[object_inds][selected_inds])
+                else:
+                    raise NotImplementedError
+                scene_ids.append(np.repeat(i, num_obj))
+        else:
+            # with floor and __scene__ (if dataset has __scene__) inside
+            num = 0
+            triple_id_end = -1
+            scene_list = np.unique(dec_objs_to_scene)
+            for i in scene_list:
+                ids = np.where(dec_objs_to_scene == i)[0]
+                if self.diffusion_bs - num < len(ids):
+                    break
+                triple_id_end += len(ids)
+                sdf_selected.append(sdfs[ids])
+                uc_rel_s_selected.append(s_feat_ucon[ids])
+                c_rel_s_selected.append(s_feat_con[ids])
+                obj_cat_selected.append(obj_cats[ids])
+                scene_ids.append(dec_objs_to_scene[ids])
+
+                num += len(ids)
+            triples_mask = (triples[:, 0] < num) & (triples[:, 2] < num)
+            triples_selected = triples[triples_mask]
 
         sdf_selected = torch.cat(sdf_selected, dim=0).cuda()
         uc_rel_s_selected = torch.cat(uc_rel_s_selected, dim=0).cuda()
@@ -495,6 +548,8 @@ class Sg2ScDiffModel(nn.Module):
         scene_ids = np.concatenate(scene_ids, axis=0)
         diff_dict = {'sdf': sdf_selected[:self.diffusion_bs], 'uc_s': uc_rel_s_selected[:self.diffusion_bs],
                      'c_s': c_rel_s_selected[:self.diffusion_bs], "scene_ids": scene_ids[:self.diffusion_bs]}
+        if len(triples_selected):
+            diff_dict.update({'triples': triples_selected})
         return obj_cat_selected[:self.diffusion_bs], diff_dict
 
     def prepare_boxes(self, triples, obj_embed, relation_cond, scene_ids=None, obj_boxes=None, obj_angles=None):
@@ -556,13 +611,13 @@ class Sg2ScDiffModel(nn.Module):
         # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
         # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
-        obj_selected, shape_diff_dict = self.select_sdfs(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_sdfs, uc_rel_feat_s, c_rel_feat_s, random=False)
-        box_diff_dict = self.prepare_boxes(dec_triples, obj_embed_, obj_boxes=dec_boxes, obj_angles=dec_angles, relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
-
+        obj_selected, shape_diff_dict = self.select_sdfs(dec_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_sdfs, uc_rel_feat_s, c_rel_feat_s, sample_type=self.sample_obj)
         self.ShapeDiff.set_input(shape_diff_dict)
         self.ShapeDiff.set_requires_grad([self.ShapeDiff.df], requires_grad=True)
         Shape_loss, Shape_loss_dict = self.ShapeDiff.forward()
 
+        box_diff_dict = self.prepare_boxes(dec_triples, obj_embed_, obj_boxes=dec_boxes, obj_angles=dec_angles,
+                                           relation_cond=latent_obj_vecs, scene_ids=dec_objs_to_scene)
         self.LayoutDiff.set_input(box_diff_dict)
         self.LayoutDiff.set_requires_grad([self.LayoutDiff.df], requires_grad=True)
         Layout_loss, Layout_loss_dict = self.LayoutDiff.forward()

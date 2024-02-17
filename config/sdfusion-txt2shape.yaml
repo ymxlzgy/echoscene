@@ -36,3 +36,5 @@ unet:
     context_dim: 1280
     use_checkpoint: true
     legacy: False
+
+    messsage_passing: False

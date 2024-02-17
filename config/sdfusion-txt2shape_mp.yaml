@@ -2,7 +2,7 @@ model:
   params:
     linear_start: 0.00085
     linear_end: 0.012
-    conditioning_key: concat
+    conditioning_key: crossattn
     timesteps: 1000
     scale_factor: 0.18215
 
@@ -14,7 +14,7 @@ bert:
 unet:
   params:
     image_size: 16
-    in_channels: 4
+    in_channels: 3
     out_channels: 3
     model_channels: 224
     num_res_blocks: 2
@@ -28,13 +28,13 @@ unet:
     num_heads: 8
 
     # 3d
-    dims: 4
+    dims: 3
 
     # cond_model params
-    use_spatial_transformer: False
+    use_spatial_transformer: true
     transformer_depth: 1
-    context_dim: null
+    context_dim: 1280
     use_checkpoint: true
     legacy: False
 
-    messsage_passing: False
+    messsage_passing: True

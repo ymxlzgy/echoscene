@@ -11,7 +11,7 @@ import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-
+from model.graph import GraphTripleConvNet
 # from ldm.modules.diffusionmodules.util import (
 # from external.ldm.modules.diffusionmodules.util import (
 from model.networks.diffusion_shape.ldm_diffusion_util import (
@@ -506,6 +506,9 @@ class UNet3DModel(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
+        using_clip=True,
+        messsage_passing=False,
+        conditioning_key='concat'
     ):
         super().__init__()
         # import pdb; pdb.set_trace()
@@ -544,6 +547,10 @@ class UNet3DModel(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
         self.predict_codebook_ids = n_embed is not None
+
+        self.using_clip = using_clip
+        self.messsage_passing = messsage_passing
+        self.conditioning_key = conditioning_key
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -733,6 +740,40 @@ class UNet3DModel(nn.Module):
             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
         )
 
+        # GCN part
+        if self.messsage_passing:
+            gconv_dim = 64
+            gconv_hidden_dim = gconv_dim * 4
+            self.pred_embeddings = nn.Embedding(16, gconv_dim * 2)
+            if self.conditioning_key in ['concat', 'hybrid']:
+                x_dim = 4096
+                conv_channel = 4
+            elif self.conditioning_key == 'crossattn':
+                x_dim = context_dim
+                conv_channel = 3
+            else:
+                raise NotImplementedError
+            self.shape_embeddings = nn.ModuleList(
+                [conv_nd(dims, conv_channel, 32, kernel_size=3, stride=1, padding=1),
+                 nn.MaxPool3d(kernel_size=2, stride=2), # in_channels / 2
+                 conv_nd(dims, 32, 64, kernel_size=3, stride=1, padding=1),
+                 nn.MaxPool3d(kernel_size=2, stride=4), # in_channels / 8
+                 nn.Flatten(),
+                 nn.Linear(64 * 2 * 2 * 2, gconv_dim),
+                 ])
+
+            gconv_kwargs_shape = {
+                'input_dim_obj': gconv_dim + x_dim,
+                'input_dim_pred': gconv_dim * 2,
+                'hidden_dim': gconv_hidden_dim,
+                'pooling': 'avg',
+                'num_layers': 5,
+                'mlp_normalization': 'batch',
+                'residual': True,
+                'output_dim': x_dim
+            }
+            self.shape_code_graph_cov = GraphTripleConvNet(**gconv_kwargs_shape)
+
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -749,7 +790,19 @@ class UNet3DModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps=None, context=None, y=None,**kwargs):
+    def shape_messsage_passing(self, obj_embed, triples, shape_code):
+        s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
+        s, p, o = [i.squeeze(1) for i in [s, p, o]]  # Now have shape (T,)
+        edges = torch.stack([s, o], dim=1)  # Shape is (T, 2)
+
+        for module in self.shape_embeddings:
+            shape_code = module(shape_code)
+        pred_embed = self.pred_embeddings(p)
+        obj_shape_embed = torch.cat([obj_embed.squeeze(1), shape_code], dim=1)
+        shape_rel_embed, _ = self.shape_code_graph_cov(obj_shape_embed, pred_embed, edges)
+        return shape_rel_embed
+
+    def forward(self, x, obj_embed, triples, timesteps=None, context=None, y=None,**kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -758,6 +811,15 @@ class UNet3DModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+        if self.messsage_passing:
+            latent_box_rel = self.shape_messsage_passing(obj_embed, triples, shape_code=x)
+            if self.conditioning_key is None:
+                x = x
+            elif self.conditioning_key in ['concat', 'hybrid']:
+                x = torch.cat([x, latent_box_rel.view(-1,1,16,16,16)], dim=1) # x now has origin_x, context, and latent_box_rel based on obj_embed(uc_context)
+            elif self.conditioning_key in ['crossattn', 'hybrid']:
+                context = latent_box_rel.unsqueeze(1) # we dont use the previous context
+
         assert (y is not None) == (
             self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"

@@ -369,12 +369,14 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
 
     for i, data in enumerate(test_dataloader_no_changes, 0):
         # print(data['scan_id'])
-        # if data['scan_id'][0] != 'LivingDiningRoom-13945':
-        #     continue
+        if data['scan_id'][0] != 'LivingDiningRoom-19784':
+            continue
         # if data['scan_id'][0].split('-')[0] not in ['DiningRoom', "LivingDiningRoom"]:
         #     continue
         # if data['scan_id'][0] not in ['MasterBedroom-58086','MasterBedroom-109561','Bedroom-11202', 'DiningRoom-2432', 'DiningRoom-451', 'DiningRoom-20718', 'LivingRoom-2050', 'LivingRoom-3540', 'LivingRoom-29294']:
             # continue
+        # if data['scan_id'][0] not in ['DiningRoom-375','DiningRoom-13727','LivingRoom-55', 'LivingRoom-791', 'LivingRoom-13599', 'LivingRoom-3540', 'LivingDiningRoom-11440', 'LivingDiningRoom-19784']:
+        #     continue
 
         try:
             dec_objs, dec_triples = data['decoder']['objs'], data['decoder']['tripltes']
@@ -420,7 +422,7 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
             print("rendering", [classes[i].strip('\n') for i in dec_objs])
             if model.type_ == 'cs++_l':
                 render_box(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
-                classes=classes, render_type=args.render_type, store_img=True, render_boxes=False, visual=False, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
+                classes=classes, render_type=args.render_type, store_img=False, render_boxes=False, visual=False, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
             elif model.type_ == 'cs++':
                 if shapes_pred is not None:
                     shapes_pred = shapes_pred.cpu().detach()
@@ -454,27 +456,27 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
                 filtered_diversity_retrieval_ids = []
                 bed_ins_id_list, night_ins_id_list, wardrobe_ins_id_list, chair_ins_id_list, table_ins_id_list, cabinet_ins_id_list, lamp_ins_id_list, sofa_ins_id_list, shelf_ins_id_list, tvstand_ins_id_list = [], [], [], [], [], [], [], [], [], []
                 for ins_id, obj_id in enumerate(dec_objs):
-                    if testdataloader.dataset.classes['bed'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['bed'] == obj_id.item():
                         bed_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['nightstand'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['nightstand'] == obj_id.item():
                         night_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['wardrobe'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['wardrobe'] == obj_id.item():
                         wardrobe_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['chair'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['chair'] == obj_id.item():
                         chair_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['table'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['table'] == obj_id.item():
                         table_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['cabinet'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['cabinet'] == obj_id.item():
                         cabinet_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['lamp'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['lamp'] == obj_id.item():
                         lamp_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['sofa'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['sofa'] == obj_id.item():
                         sofa_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['shelf'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['shelf'] == obj_id.item():
                         shelf_ins_id_list.append(ins_id)
-                    if testdataloader.dataset.classes['tv_stand'] == obj_id.item():
+                    if test_dataloader_no_changes.dataset.classes['tv_stand'] == obj_id.item():
                         tvstand_ins_id_list.append(ins_id)
-                    if obj_id.item() != 0 and testdataloader.dataset.classes_r[obj_id.item()] != 'floor':
+                    if obj_id.item() != 0 and test_dataloader_no_changes.dataset.classes_r[obj_id.item()] != 'floor':
                         points = diversity_points[ins_id]
                         if type(points) is torch.Tensor:
                             points = points.cpu().numpy()
@@ -694,11 +696,11 @@ def evaluate():
 
     print('\nEditing Mode - Additions')
     reseed(47)
-    validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    # validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nEditing Mode - Relationship changes')
-    validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    # validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nGeneration Mode')
