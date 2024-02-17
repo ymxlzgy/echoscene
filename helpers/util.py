@@ -518,10 +518,12 @@ def scale_box_params(box_params, file=None, angle=False):
     assert file is not None
     stats = np.loadtxt(file)
     if len(stats) == 14: # 3*2+3*2+1*2
-        min_lhw, max_lhw, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
+        min_size, max_size, min_xyz, max_xyz, min_angle, max_angle = stats[:3], stats[3:6], stats[6:9], stats[9:12], stats[12:13], stats[13:]
+    elif len(stats) == 12: # 3*2+3*2
+        min_size, max_size, min_xyz, max_xyz = stats[:3], stats[3:6], stats[6:9], stats[9:12]
     else:
         raise NotImplementedError
-    box_params[:3] = (box_params[:3] - min_lhw) / (max_lhw - min_lhw) # size
+    box_params[:3] = (box_params[:3] - min_size) / (max_size - min_size) # size
     box_params[:3] = 2 * box_params[:3]-1
 
     box_params[3:6] = (box_params[3:6] - min_xyz) / (max_xyz - min_xyz) # loc

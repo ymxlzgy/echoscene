@@ -88,7 +88,7 @@ class Sg2BoxDiffModel(nn.Module):
             self.gconv_net_ec_rel_l = GraphTripleConvNet(**gconv_kwargs_ec_rel)
 
         ## layout branch
-        self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg)
+        self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg, edge_classes=num_preds)
         # l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
         # rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
         # if self.LayoutDiff.df.model.conditioning_key == 'concat':

@@ -102,7 +102,7 @@ class Sg2ScDiffModel(nn.Module):
         self.rel_s_mlp = make_mlp(rel_s_layers, batch_norm=mlp_normalization, norelu=True)
 
         ## layout branch
-        self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg)
+        self.LayoutDiff = DiffusionSceneLayout_DDPM(self.diff_cfg, edge_classes=num_preds)
         # l_crossattn_dim = self.diff_cfg.layout_branch.denoiser_kwargs.crossattn_dim
         # rel_l_layers = [gconv_dim * 2 + add_dim, 960, l_crossattn_dim] # cross attn
         # if self.LayoutDiff.df.model.conditioning_key == 'concat':

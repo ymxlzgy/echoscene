@@ -7,37 +7,22 @@ import os.path
 import torch
 import numpy as np
 import copy
-from . import util
 from tqdm import tqdm
 import json
 from helpers.psutil import FreeMemLinux
-from helpers.util import normalize_box_params, denormalize_box_params, get_rotation
+from helpers.util import standardize_box_params, scale_box_params, get_rotation
 from omegaconf import OmegaConf
 import clip
 import random
 import pickle
 import open3d as o3d
 
-
-def load_ckpt(ckpt):
-    map_fn = lambda storage, loc: storage
-    if type(ckpt) == str:
-        state_dict = torch.load(ckpt, map_location=map_fn)
-    else:
-        state_dict = ckpt
-    return state_dict
-
-class RIODatasetSceneGraph(data.Dataset):
-    def __init__(self, root, root_3rscan,
-                 label_file, npoints=2500, class_choice=None,
+class ThreedSSGDatasetSceneGraph(data.Dataset):
+    def __init__(self, root, root_3rscan, class_choice=None,
                  split='train', data_augmentation=True, shuffle_objs=False,
-                 pass_scan_id=False, use_points=True, use_SDF=False,
-                 use_scene_rels=False, data_len=None,
-                 with_changes=True, vae_baseline=False,
-                 scale_func='diag', eval=False, eval_type='addition',
-                 atlas=None, path2atlas=None, with_feats=False, with_CLIP=False,
-                 seed=True, use_splits=False, large=False,
-                 use_rio27=False, recompute_feats=False, recompute_clip=False, use_canonical=False,
+                 pass_scan_id=False, use_SDF=False, use_scene_rels=False, data_len=None,
+                 with_changes=True, scale_func='diag', eval=False, eval_type='addition', with_CLIP=False,
+                 seed=True, use_splits=False, large=False, use_rio27=False, recompute_clip=False, use_canonical=False,
                  crop_floor=False, center_scene_to_floor=False):
 
         # options currently not used in the experiments
@@ -46,13 +31,9 @@ class RIODatasetSceneGraph(data.Dataset):
         self.center_scene_to_floor = center_scene_to_floor
 
         self.seed = seed
-        self.with_feats = with_feats
         self.with_CLIP = with_CLIP
-        self.atlas = atlas
         self.cond_model = None
-        self.path2atlas = path2atlas
         self.large = large
-        self.recompute_feats = recompute_feats
         self.recompute_clip = recompute_clip
 
         self.use_canonical = use_canonical
@@ -64,8 +45,6 @@ class RIODatasetSceneGraph(data.Dataset):
 
         self.scale_func = scale_func
         self.with_changes = with_changes
-        self.npoints = npoints
-        self.use_points = use_points
         self.use_SDF = use_SDF
         self.root = root
         # list of class categories
@@ -74,7 +53,6 @@ class RIODatasetSceneGraph(data.Dataset):
         self.scans = []
         self.data_augmentation = data_augmentation
         self.data_len = data_len
-        self.vae_baseline = vae_baseline
         self.use_scene_rels = use_scene_rels
 
         self.fm = FreeMemLinux('GB')
@@ -93,6 +71,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
         # uses scene sections of up to 9 objects (from 3DSSG) if true, and full scenes otherwise
         self.use_splits = use_splits
+        self.box_normalized_stats = os.path.join(self.root, "box_bounds_train.txt")
         if split == 'train_scans': # training set
             splits_fname = 'relationships_train_clean' if self.use_splits else 'relationships_merged_train_clean'
             self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
@@ -110,8 +89,6 @@ class RIODatasetSceneGraph(data.Dataset):
 
         self.relationship_json, self.objs_json, self.tight_boxes_json = \
                 self.read_relationship_json(self.rel_json_file, self.box_json_file)
-
-        self.label_file = label_file
 
         self.padding = 0.2
         self.eval = eval
@@ -176,38 +153,19 @@ class RIODatasetSceneGraph(data.Dataset):
         self.sorted_cat_list = sorted(self.cat)
         self.files = {}
         self.eval_type = eval_type
-
-        # check if all shape features exist. If not they get generated here (once)
-        if with_feats:
-            print('Checking for missing feats. This can be slow the first time.\nThis process needs to be only run once!')
-            # for index in tqdm(range(len(self))):
-            #     self.__getitem__(index)
-            self.recompute_feats = False
-
         # check if all clip/bert features exist. If not they get generated here (once)
-        if self.with_BERT:
-            print(
-                'Checking for missing bert feats. This can be slow the first time.\nThis process needs to be only run once!')
-            df_conf = OmegaConf.load('../model/pretrained_model/config/bert.yaml')
-            bert_params = df_conf.bert.params
-            self.text_embed_dim = bert_params.n_embed
-            self.cond_model = BERTTextEncoder(**bert_params)
-            self.cond_model.to('cuda')
-            print('loading BERT')
-            state_dict = load_ckpt('../model/pretrained_model/bert.pth')
-            self.cond_model.load_state_dict(state_dict['cond_model'])
-            # for index in tqdm(range(len(self))):
-            #     self.__getitem__(index)
-            self.recompute_bert = False
-        # check if all clip/bert features exist. If not they get generated here (once)
+        self.bin_angle = False
         if self.with_CLIP:
             self.cond_model, preprocess = clip.load("ViT-B/32", device='cuda')
+            self.cond_model_cpu, preprocess_cpu = clip.load("ViT-B/32", device='cpu')
             print('loading CLIP')
             print(
                 'Checking for missing clip feats. This can be slow the first time.\nThis process needs to be only run once!')
             # for index in tqdm(range(len(self))):
             #     self.__getitem__(index)
             self.recompute_clip = False
+
+        self.vocab['object_idx_to_name_grained'] = self.vocab['object_idx_to_name']
 
     def read_relationship_json(self, json_file, box_json_file):
         """ Reads from json files the relationship labels, objects and bounding boxes
@@ -223,10 +181,13 @@ class RIODatasetSceneGraph(data.Dataset):
         with open(box_json_file, "r") as read_file:
             box_data = json.load(read_file)
 
+        if 'train' in box_json_file and not os.path.exists(os.path.join(self.root, "box_bounds_train.txt")):
+                min_wlh, max_wlh, min_xyz, max_xyz = self.collect_min_max_box(box_data)
+                np.savetxt(os.path.join(self.root, f"box_bounds_train.txt"), np.hstack([min_wlh, max_wlh, min_xyz, max_xyz]).reshape(1, -1), fmt='%f')
+
         with open(json_file, "r") as read_file:
             data = json.load(read_file)
             for scan in data['scans']:
-
                 relationships = []
                 for relationship in scan["relationships"]:
                     relationship[2] -= 1
@@ -255,6 +216,21 @@ class RIODatasetSceneGraph(data.Dataset):
                 objs[scan["scan"] + "_" + str(scan["split"])] = objects
                 tight_boxes[scan["scan"] + "_" + str(scan["split"])] = boxes
         return rel, objs, tight_boxes
+
+    def collect_min_max_box(self, box_data):
+        box_list = []
+        for _, boxes_dict in box_data.items():
+            for _, box in boxes_dict.items():
+                box_list.append(box['param7'])
+        param7_all = np.array(box_list)
+        size_all = param7_all[:, :3]
+        min_size = np.min(size_all, axis=0)
+        max_size = np.max(size_all, axis=0)
+        loc_all = param7_all[:, 3:6]
+        min_xyz = np.min(loc_all, axis=0)
+        max_xyz = np.max(loc_all, axis=0)
+        return min_size, max_size, min_xyz, max_xyz
+
 
     def read_relationships(self, read_file):
         """load list of relationship labels
@@ -396,7 +372,6 @@ class RIODatasetSceneGraph(data.Dataset):
             min_box = np.asarray(scene_floor[floor_idx]['min_box']) - scene_center
             max_box = np.asarray(scene_floor[floor_idx]['max_box']) - scene_center
 
-        file = os.path.join(self.root_3rscan, scan_id_no_split, self.label_file)
         if os.path.exists(os.path.join(self.root_3rscan, scan_id_no_split, "semseg.v2.json")):
             semseg_file = os.path.join(self.root_3rscan, scan_id_no_split, "semseg.v2.json")
         elif os.path.exists(os.path.join(self.root_3rscan, scan_id_no_split, "semseg.json")):
@@ -413,23 +388,9 @@ class RIODatasetSceneGraph(data.Dataset):
         if self.shuffle_objs:
             random.shuffle(keys)
 
-        feats_in = None
-        bert_feats_ins = None
-        bert_feats_rel = None
         clip_feats_ins = None
         clip_feats_rel = None
         # If true, expected paths to saved bert features will be set here
-        if self.with_BERT:
-            self.bert_feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                      'BERT_{}_{}.pkl'.format('splits' if self.use_splits else 'merged',
-                                                                  scan_id.split('_')[1]))
-            if self.crop_floor:
-                self.bert_feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                          'BERT_{}_{}_floor.pkl'.format('splits' if self.use_splits else 'merged',
-                                                                            scan_id.split('_')[1]))
-            if self.recompute_bert:
-                self.bert_feats_path += 'tmp'
-
         if self.with_CLIP:
             self.clip_feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
                                                 'CLIP_{}_{}.pkl'.format('splits' if self.use_splits else 'merged',
@@ -441,45 +402,6 @@ class RIODatasetSceneGraph(data.Dataset):
                                                         scan_id.split('_')[1]))
             if self.recompute_clip:
                 self.clip_feats_path += 'tmp'
-
-
-        # If true, expected paths to saved atlasnet features will be set here
-        if self.with_feats and self.path2atlas is not None:
-            _, atlasname = os.path.split(self.path2atlas)
-            atlasname = atlasname.split('.')[0]
-
-            if not self.large:
-                feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                          '{}_small_{}_{}.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
-            else:
-                feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                          '{}_large_{}_{}.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
-                if self.crop_floor:
-                    feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                          '{}_large_{}_{}_floor.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
-            if self.recompute_feats:
-                feats_path += 'tmp'
-
-        # Load points if with features but features cannot be found or are forced to be recomputed
-        # Loads points if use_points is set to true
-        if (self.with_feats and (not os.path.exists(feats_path) or self.recompute_feats)) or self.use_points:
-            if file in self.files: # Caching
-                (points, instances) = self.files[file]
-            else:
-                points, instances, _, _ = util.read_ply(file)
-
-                if self.fm.user_free > 5:
-                    self.files[file] = (points, instances)
-
-            if self.crop_floor and self.center_scene_to_floor:
-                print("shifting points")
-                points = points - scene_center.reshape(1, -1)
 
         instance2mask = {}
         instance2mask[0] = 0
@@ -521,7 +443,7 @@ class RIODatasetSceneGraph(data.Dataset):
                     else:
                         selected_shapes.append(True)
                 cat.append(scene_class_id)
-                bbox = self.tight_boxes_json[scan_id][key]['param7'].copy()
+                bbox = np.array(self.tight_boxes_json[scan_id][key]['param7'].copy())
                 if self.crop_floor and key in self.floor_data[scan_id_no_split][split].keys():
                     bbox = self.floor_data[scan_id_no_split][split][key]['params7'].copy()
                     bbox[6] = np.deg2rad(bbox[6])
@@ -541,121 +463,16 @@ class RIODatasetSceneGraph(data.Dataset):
                             bbox[1] = temp
                     # for other options, do not change the box
                 instances_order.append(key)
-                if not self.vae_baseline:
+                if self.bin_angle:
                     bins = np.linspace(0, np.deg2rad(360), 24)
                     angle = np.digitize(bbox[6], bins)
-                    bbox = normalize_box_params(bbox)
                     bbox[6] = angle
+                    bbox[0:6] = standardize_box_params(bbox[0:6], params=6)
                 else:
-                    bins = np.linspace(0, np.deg2rad(360), 24)
-                    bbox[6] = np.digitize(bbox[6], bins)
+                    bbox = scale_box_params(bbox, file=self.box_normalized_stats, angle=False) # need to change angle after
+
+
                 tight_boxes.append(bbox)
-
-        if self.with_BERT:
-            # If precomputed features exist, we simply load them
-            if os.path.exists(self.bert_feats_path):
-                bert_feats_dic = pickle.load(open(self.bert_feats_path, 'rb'))
-
-                bert_feats_ins = bert_feats_dic['instance_feats']
-                bert_feats_order = np.asarray(bert_feats_dic['instance_order'])
-                ordered_feats = []
-                for inst in instances_order:
-                    bert_feats_in_instance = inst == bert_feats_order
-                    ordered_feats.append(bert_feats_ins[:-1][bert_feats_in_instance])
-                ordered_feats.append(bert_feats_ins[-1][np.newaxis,:])
-                bert_feats_ins = list(np.concatenate(ordered_feats, axis=0))
-                bert_feats_rel = bert_feats_dic['rel_feats']
-
-        if self.with_CLIP:
-            # If precomputed features exist, we simply load them
-            if os.path.exists(self.clip_feats_path):
-                clip_feats_dic = pickle.load(open(self.clip_feats_path, 'rb'))
-
-                clip_feats_ins = clip_feats_dic['instance_feats']
-                clip_feats_order = np.asarray(clip_feats_dic['instance_order'])
-                ordered_feats = []
-                for inst in instances_order:
-                    clip_feats_in_instance = inst == clip_feats_order
-                    ordered_feats.append(clip_feats_ins[:-1][clip_feats_in_instance])
-                ordered_feats.append(clip_feats_ins[-1][np.newaxis,:])
-                clip_feats_ins = list(np.concatenate(ordered_feats, axis=0))
-                clip_feats_rel = clip_feats_dic['rel_feats']
-
-        if self.with_feats:
-            # If precomputed features exist, we simply load them
-            if os.path.exists(feats_path):
-                feats_dic = pickle.load(open(feats_path, 'rb'))
-
-                feats_in = feats_dic['feats']
-                feats_order = np.asarray(feats_dic['instance_order'])
-                ordered_feats = []
-                for inst in instances_order:
-                    feats_in_instance = inst == feats_order
-                    ordered_feats.append(feats_in[:-1][feats_in_instance])
-                ordered_feats.append(np.zeros([1, feats_in.shape[1]]))
-                feats_in = list(np.concatenate(ordered_feats, axis=0))
-
-        # Sampling of points from object if they are loaded
-        if self.use_points:
-            masks = np.array(list(map(lambda l: instance2mask[l] if l in instance2mask.keys() else 0, instances)),
-                             dtype=np.int32)
-            num_pointsets = len(cat) + int(self.use_scene_rels)  # add zeros for the scene node
-            obj_points = torch.zeros([num_pointsets, self.npoints, 3])
-
-            for i in range(len(cat)):
-                obj_pointset = points[np.where(masks == i + 1)[0], :]
-
-                if self.crop_floor and self.vocab['object_idx_to_name'][cat[i]].split('\n')[0] == 'floor':
-                    filter_mask = (obj_pointset[:,0] > min_box[0]) * (obj_pointset[:,0] < max_box[0]) \
-                      * (obj_pointset[:,1] > min_box[1]) * (obj_pointset[:,1] < max_box[1])
-
-                    obj_pointset = obj_pointset[np.where(filter_mask > 0)[0], :]
-
-                    print(self.vocab['object_idx_to_name'][cat[i]].split('\n')[0], len(obj_pointset))
-                if len(obj_pointset) >= self.npoints:
-                    choice = np.random.choice(len(obj_pointset), self.npoints, replace=False)
-                else:
-                    choice = np.arange(len(obj_pointset))
-                    # use repetitions to fill some more points
-                    choice2 = np.random.choice(len(obj_pointset), self.npoints - choice.shape[0], replace=True)
-                    choice = np.concatenate([choice, choice2], 0)
-                    random.shuffle(choice)
-
-                obj_pointset = obj_pointset[choice, :]
-                obj_pointset = torch.from_numpy(obj_pointset.astype(np.float32))
-
-                if not self.vae_baseline:
-                    obj_pointset = self.norm_tensor(obj_pointset, denormalize_box_params(tight_boxes[i]),
-                                           scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
-                else:
-                    obj_pointset = self.norm_tensor(obj_pointset, np.asarray(tight_boxes[i]),
-                                                    scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
-                if 0:
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(obj_pointset.cpu().numpy())
-                    o3d.visualization.draw_geometries([pcd], '{}'.format(self.classes_r[cat[i]]), width=500, height=500)
-                obj_points[i] = obj_pointset
-
-            #TODO
-            if self.use_SDF:
-                obj_sdfs = []
-                for obj_point in obj_points:
-                    # Example usage
-                    point_cloud_data = obj_point.detach().cpu().numpy()
-                    voxel_size = 0.05
-                    normals_estimation_radius = 0.1
-                    sdf_truncation_distance = 2 * voxel_size
-
-                    obj_sdf = self.point_cloud_to_sdf(point_cloud_data, voxel_size, normals_estimation_radius,
-                                             sdf_truncation_distance)
-                    if 1:
-                        # Example usage
-                        self.visualize_sdf(obj_sdf)
-                    obj_sdfs.append(obj_sdf)
-        else:
-            obj_points = None
-
-
 
         triples = []
         words = []
@@ -679,38 +496,26 @@ class RIODatasetSceneGraph(data.Dataset):
                 words.append(self.get_key(self.classes, ob) + ' ' + 'in' + ' ' + 'room')
             cat.append(0)
             # dummy scene box
-            tight_boxes.append([-1, -1, -1, -1, -1, -1, -1])
+            tight_boxes.append(np.array([-1, -1, -1, -1, -1, -1, -1]))
+
+        if self.with_CLIP:
+            # If precomputed features exist, we simply load them
+            if os.path.exists(self.clip_feats_path):
+                clip_feats_dic = pickle.load(open(self.clip_feats_path, 'rb'))
+
+                clip_feats_ins = clip_feats_dic['instance_feats']
+                clip_feats_order = np.asarray(clip_feats_dic['instance_order'])
+                ordered_feats = []
+                for inst in instances_order:
+                    clip_feats_in_instance = inst == clip_feats_order
+                    ordered_feats.append(clip_feats_ins[:-1][clip_feats_in_instance])
+                if self.use_scene_rels:
+                    ordered_feats.append(clip_feats_ins[-1][np.newaxis,:]) # should be room's feature
+                clip_feats_ins = list(np.concatenate(ordered_feats, axis=0))
+                clip_feats_rel = clip_feats_dic['rel_feats']
 
         output = {}
-        if self.use_points:
-            output['scene'] = points
-
-        # if features are requested but the files don't exist, we run all loaded pointclouds through atlasnet
-        # to compute them and then save them for future usage
-        if self.with_BERT and (not os.path.exists(self.bert_feats_path) or bert_feats_ins is None) and self.cond_model is not None:
-            num_cat = len(cat)
-            feats_ins = []
-            feats_rel = {}
-            with torch.no_grad():
-                for i in range(num_cat-1):
-                    # print(self.get_key(self.classes,cat[i]))
-                    feats_ins.append(self.cond_model(self.get_key(self.classes,cat[i])).detach().cpu().numpy()) # 1*77*1280
-                feats_ins.append(self.cond_model('room').detach().cpu().numpy())
-                feats_ins = np.vstack(feats_ins)
-                for i in range(len(words)):
-                    feats_rel[words[i]] = self.cond_model(words[i]).detach().cpu().numpy()
-            bert_feats_in = {}
-            bert_feats_in['instance_feats'] = feats_ins
-            bert_feats_in['instance_order'] = instances_order
-            bert_feats_in['rel_feats'] = feats_rel
-            # feats_in = list(feats)
-            path = os.path.join(self.bert_feats_path)
-            if self.recompute_bert:
-                path = path[:-3]
-
-            pickle.dump(bert_feats_in, open(path, 'wb'))
-
-        # if features are requested but the files don't exist, we run all loaded pointclouds through atlasnet
+        # if features are requested but the files don't exist, we run all loaded cats and triples through clip
         # to compute them and then save them for future usage
         if self.with_CLIP and (not os.path.exists(self.clip_feats_path) or clip_feats_ins is None) and self.cond_model is not None:
             num_cat = len(cat)
@@ -738,25 +543,8 @@ class RIODatasetSceneGraph(data.Dataset):
                 path = path[:-3]
 
             pickle.dump(clip_feats_in, open(path, 'wb'))
-
-        # if features are requested but the files don't exist, we run all loaded pointclouds through atlasnet
-        # to compute them and then save them for future usage
-        if self.with_feats and (not os.path.exists(feats_path) or feats_in is None) and self.atlas is not None:
-            pf = torch.from_numpy(np.array(list(obj_points.numpy()), dtype=np.float32)).float().cuda().transpose(1,2)
-            with torch.no_grad():
-                feats = self.atlas.encoder(pf).detach().cpu().numpy()
-
-            feats_out = {}
-            feats_out['feats'] = feats
-            feats_out['instance_order'] = instances_order
-            feats_in = list(feats)
-
-            assert self.path2atlas is not None
-            path = os.path.join(feats_path)
-            if self.recompute_feats:
-                path = path[:-3]
-
-            pickle.dump(feats_out, open(path, 'wb'))
+            clip_feats_ins = list(clip_feats_in['instance_feats'])
+            clip_feats_rel = clip_feats_in['rel_feats']
 
         # prepare outputs
         output['encoder'] = {}
@@ -764,27 +552,15 @@ class RIODatasetSceneGraph(data.Dataset):
         output['encoder']['triples'] = triples
         output['encoder']['boxes'] = tight_boxes
         output['encoder']['words'] = words
-        if self.use_points:
-            output['encoder']['points'] = list(obj_points.numpy())
 
-        if self.with_BERT:
-            output['encoder']['text_feats'] = bert_feats_ins
-            bert_feats_rel_new = []
-            if bert_feats_rel != None:
-                for word in words:
-                    bert_feats_rel_new.append(bert_feats_rel[word])
-                output['encoder']['rel_feats'] = bert_feats_rel_new
 
-        elif self.with_CLIP:
+        if self.with_CLIP:
             output['encoder']['text_feats'] = clip_feats_ins
             clip_feats_rel_new = []
             if clip_feats_rel != None:
                 for word in words:
                     clip_feats_rel_new.append(clip_feats_rel[word])
                 output['encoder']['rel_feats'] = clip_feats_rel_new
-
-        if self.with_feats:
-            output['encoder']['feats'] = feats_in
 
         output['manipulate'] = {}
         if not self.with_changes:
@@ -805,9 +581,9 @@ class RIODatasetSceneGraph(data.Dataset):
                     else:
                         output['manipulate']['type'] = 'none'
                 elif output['manipulate']['type'] == 'relationship':
-                    rel, pair, suc = self.modify_relship(output['decoder'])
+                    rel, original_triple, suc = self.modify_relship(output['encoder'])
                     if suc:
-                        output['manipulate']['relship'] = (rel, pair)
+                        output['manipulate']['original_relship'] = (rel, original_triple)
                     else:
                         output['manipulate']['type'] = 'none'
             else:
@@ -829,34 +605,19 @@ class RIODatasetSceneGraph(data.Dataset):
         output['encoder']['objs'] = torch.from_numpy(np.array(output['encoder']['objs'], dtype=np.int64)) # this is changed
         output['encoder']['triples'] = torch.from_numpy(np.array(output['encoder']['triples'], dtype=np.int64))
         output['encoder']['boxes'] = torch.from_numpy(np.array(output['encoder']['boxes'], dtype=np.float32))
-        if self.use_points:
-            output['encoder']['points'] = torch.from_numpy(np.array(output['encoder']['points'], dtype=np.float32))
-        if self.with_feats:
-            output['encoder']['feats'] = torch.from_numpy(np.array(output['encoder']['feats'], dtype=np.float32))
-        if self.with_BERT or self.with_CLIP:
+        if self.with_CLIP:
             output['encoder']['text_feats'] = torch.from_numpy(np.array(output['encoder']['text_feats'], dtype=np.float32)) # this is changed
             output['encoder']['rel_feats'] = torch.from_numpy(np.array(output['encoder']['rel_feats'], dtype=np.float32))
-
-
         output['decoder']['objs'] = torch.from_numpy(np.array(output['decoder']['objs'], dtype=np.int64))
         output['decoder']['triples'] = torch.from_numpy(np.array(output['decoder']['triples'], dtype=np.int64)) # this is changed
         output['decoder']['boxes'] = torch.from_numpy(np.array(output['decoder']['boxes'], dtype=np.float32))
-        if self.use_points:
-            output['decoder']['points'] = torch.from_numpy(np.array(output['decoder']['points'], dtype=np.float32))
-        if self.with_feats:
-            output['decoder']['feats'] = torch.from_numpy(np.array(output['decoder']['feats'], dtype=np.float32))
-        if self.with_BERT or self.with_CLIP:
+        if self.with_CLIP:
             output['decoder']['text_feats'] = torch.from_numpy(np.array(output['decoder']['text_feats'], dtype=np.float32))
             output['decoder']['rel_feats'] = torch.from_numpy(np.array(output['decoder']['rel_feats'], dtype=np.float32)) # this is changed
-
         output['scan_id'] = scan_id_no_split
         output['split_id'] = scan_id.split('_')[1]
         output['instance_id'] = instances_order
 
-        ## encoder:
-        # objs: class id;
-        # triples: [mask_sub, relation, mask_obj] mask is the instance id in the selected split started from 1 to number_objs rather than the one in the whole instances.
-        # boxes: param7
         return output
 
 
@@ -881,13 +642,10 @@ class RIODatasetSceneGraph(data.Dataset):
             trials += 1
             node_id = np.random.randint(len(graph['objs']) - 1)
 
-        graph['objs'].pop(node_id)
-        if self.use_points:
-            graph['points'].pop(node_id)
-        if self.with_feats:
-            graph['feats'].pop(node_id)
-        if self.with_BERT or self.with_CLIP:
-            graph['text_feats'].pop(node_id)
+        node_removed = graph['objs'].pop(node_id)
+        node_clip_removed = None
+        if self.with_CLIP:
+            node_clip_removed = graph['text_feats'].pop(node_id)
 
         graph['boxes'].pop(node_id)
 
@@ -896,7 +654,7 @@ class RIODatasetSceneGraph(data.Dataset):
             sub, pred, obj = x
             if sub == node_id or obj == node_id:
                 to_rm.append(x)
-                if self.with_BERT or self.with_CLIP:
+                if self.with_CLIP:
                     graph['rel_feats'].pop(i)
                     graph['words'].pop(i)
 
@@ -954,26 +712,27 @@ class RIODatasetSceneGraph(data.Dataset):
                 continue
             if graph['objs'][obj] in excluded or graph['objs'][sub] in excluded:
                 continue
-            # sub_cl, obj_cl = graph['objs'][sub], graph['objs'][obj]
             if interpretable:
                 if graph['objs'][obj] in eval_excluded or graph['objs'][sub] in eval_excluded: # don't use the floor
                     continue
-                new_pred = interpretable_rels[np.random.randint(1, len(interpretable_rels))]
+                if pred not in interpretable_rels:
+                    continue
+                else:
+                    new_pred = interpretable_rels[np.random.randint(1, len(interpretable_rels))]
             else:
                 new_pred = np.random.randint(1, 27)
+                if new_pred == pred:
+                    continue
 
             graph['words'][idx] = graph['words'][idx].replace(self.relationships[graph['triples'][idx][1]],self.relationships[new_pred])
-            if self.with_BERT:
-                rel = self.cond_model(graph['words'][idx]).detach().cpu().numpy()
-                graph['rel_feats'][idx] = np.squeeze(rel)
-            elif self.with_CLIP:
-                text_rel = clip.tokenize(graph['words'][idx]).to('cuda')
-                rel = self.cond_model.encode_text(text_rel).detach().cpu().numpy()
-                graph['rel_feats'][idx] = np.squeeze(rel)
+            graph['changed_id'] = idx
+
+            # When interpretable is false, we can make things from the encoder side not existed, so that make sure decoder side is the real data.
+            # When interpretable is true, we can make things from the decoder side not existed, so that make sure what we test (encoder side) is the real data.
             graph['triples'][idx][1] = new_pred
 
             did_change = True
-        return idx, (sub, obj), did_change
+        return idx, (sub, pred, obj), did_change
 
     def __len__(self):
         if self.data_len is not None:
@@ -982,159 +741,133 @@ class RIODatasetSceneGraph(data.Dataset):
             return len(self.scans)
 
 
-def collate_fn_vaegan(batch, use_points=False):
-    """
-    Collate function to be used when wrapping a RIODatasetSceneGraph in a
-    DataLoader. Returns a dictionary
-    """
+    def collate_fn(self, batch, use_points=False):
+        """
+        Collate function to be used when wrapping a RIODatasetSceneGraph in a
+        DataLoader. Returns a dictionary
+        """
 
-    out = {}
+        out = {}
 
-    out['scene_points'] = []
-    out['scan_id'] = []
-    out['instance_id'] = []
-    out['split_id'] = []
+        out['scene_points'] = []
+        out['scan_id'] = []
+        out['instance_id'] = []
+        out['split_id'] = []
 
-    out['missing_nodes'] = []
-    out['missing_nodes_decoder'] = []
-    out['manipulated_nodes'] = []
-    global_node_id = 0
-    global_dec_id = 0
-
-    for i in range(len(batch)):
-        if batch[i] == -1:
-            return -1
-        # notice only works with single batches
-        out['scan_id'].append(batch[i]['scan_id'])
-        out['instance_id'].append(batch[i]['instance_id'])
-        out['split_id'].append(batch[i]['split_id'])
-
-        if batch[i]['manipulate']['type'] == 'addition':
-            out['missing_nodes'].append(global_node_id + batch[i]['manipulate']['added'])
-            out['missing_nodes_decoder'].append(global_dec_id + batch[i]['manipulate']['added'])
-        elif batch[i]['manipulate']['type'] == 'relationship':
-            rel, (sub, obj) = batch[i]['manipulate']['relship']
-            out['manipulated_nodes'].append(global_dec_id + sub)
-            out['manipulated_nodes'].append(global_dec_id + obj)
-
-        if 'scene' in batch[i]:
-            out['scene_points'].append(batch[i]['scene'])
-
-        global_node_id += len(batch[i]['encoder']['objs'])
-        global_dec_id += len(batch[i]['decoder']['objs'])
-
-    for key in ['encoder', 'decoder']:
-        all_objs, all_boxes, all_triples = [], [], []
-        all_obj_to_scene, all_triple_to_scene = [], []
-        all_points = []
-        all_feats = []
-        all_text_feats = []
-        all_rel_feats = []
-
-        obj_offset = 0
-
+        out['missing_nodes'] = []
+        out['missing_nodes_decoder'] = []
+        out['manipulated_subs'] = []
+        out['manipulated_objs'] = []
+        out['manipulated_preds'] = []
+        global_node_id = 0
+        global_dec_id = 0
         for i in range(len(batch)):
             if batch[i] == -1:
-                print('this should not happen')
-                continue
-            (objs, triples, boxes) = batch[i][key]['objs'], batch[i][key]['triples'], batch[i][key]['boxes']
+                return -1
+            # notice only works with single batches
+            out['scan_id'].append(batch[i]['scan_id'])
+            out['instance_id'].append(batch[i]['instance_id'])
+            out['split_id'].append(batch[i]['split_id'])
 
-            if 'points' in batch[i][key]:
-                all_points.append(batch[i][key]['points'])
-            if 'feats' in batch[i][key]:
-                all_feats.append(batch[i][key]['feats'])
-            if 'text_feats' in batch[i][key]:
-                all_text_feats.append(batch[i][key]['text_feats'])
-            if 'rel_feats' in batch[i][key]:
-                all_rel_feats.append(batch[i][key]['rel_feats'])
+            if batch[i]['manipulate']['type'] == 'addition':
+                out['missing_nodes'].append(global_node_id + batch[i]['manipulate']['added'])
+            elif batch[i]['manipulate']['type'] == 'relationship':
+                rel, (sub, pred, obj) = batch[i]['manipulate']['original_relship']  # remember that this is already changed in the initial scene graph, which means this triplet is real data.
+                # which node is changed in the beginning.
+                out['manipulated_subs'].append(global_node_id + sub)
+                out['manipulated_objs'].append(global_node_id + obj)
+                out['manipulated_preds'].append(pred)  # this is the real edge
 
-            num_objs, num_triples = objs.size(0), triples.size(0)
+            global_node_id += len(batch[i]['encoder']['objs'])
+            global_dec_id += len(batch[i]['decoder']['objs'])
 
-            all_objs.append(objs)
-            all_boxes.append(boxes)
+        for key in ['encoder', 'decoder']:
+            all_objs, all_boxes, all_triples = [], [], []
+            all_obj_to_scene, all_triple_to_scene = [], []
+            all_text_feats = []
+            all_rel_feats = []
 
-            if triples.dim() > 1:
-                triples = triples.clone()
-                triples[:, 0] += obj_offset
-                triples[:, 2] += obj_offset
+            obj_offset = 0
 
-                all_triples.append(triples)
-                all_triple_to_scene.append(torch.LongTensor(num_triples).fill_(i))
+            for i in range(len(batch)):
+                if batch[i] == -1:
+                    print('this should not happen')
+                    continue
+                (objs, triples, boxes) = batch[i][key]['objs'], batch[i][key]['triples'], batch[i][key]['boxes']
 
-            all_obj_to_scene.append(torch.LongTensor(num_objs).fill_(i))
+                if 'text_feats' in batch[i][key]:
+                    all_text_feats.append(batch[i][key]['text_feats'])
+                if 'rel_feats' in batch[i][key]:
+                    if 'changed_id' in batch[i][key]:
+                        idx = batch[i][key]['changed_id']
+                        if self.with_CLIP:
+                            text_rel = clip.tokenize(batch[i][key]['words'][idx]).to('cpu')
+                            rel = self.cond_model_cpu.encode_text(text_rel).detach().numpy()
+                            batch[i][key]['rel_feats'][idx] = torch.from_numpy(np.squeeze(rel)) # this should be a fake relation from the encoder side
 
-            obj_offset += num_objs
+                    all_rel_feats.append(batch[i][key]['rel_feats'])
 
-        all_objs = torch.cat(all_objs)
-        all_boxes = torch.cat(all_boxes)
+                num_objs, num_triples = objs.size(0), triples.size(0)
 
-        all_obj_to_scene = torch.cat(all_obj_to_scene)
+                all_objs.append(objs)
+                all_boxes.append(boxes)
 
-        if len(all_triples) > 0:
-            all_triples = torch.cat(all_triples)
-            all_triple_to_scene = torch.cat(all_triple_to_scene)
-        else:
-            return -1
+                if triples.dim() > 1:
+                    triples = triples.clone()
+                    triples[:, 0] += obj_offset
+                    triples[:, 2] += obj_offset
 
-        outputs = {'objs': all_objs,
-                   'tripltes': all_triples,
-                   'boxes': all_boxes,
-                   'obj_to_scene': all_obj_to_scene,
-                   'triple_to_scene': all_triple_to_scene}
+                    all_triples.append(triples)
+                    all_triple_to_scene.append(torch.LongTensor(num_triples).fill_(i))
 
-        if len(all_points) > 0:
-            all_points = torch.cat(all_points)
-            outputs['points'] = all_points
+                all_obj_to_scene.append(torch.LongTensor(num_objs).fill_(i))
 
-        if len(all_feats) > 0:
-            all_feats = torch.cat(all_feats)
-            outputs['feats'] = all_feats
-        if len(all_text_feats) > 0:
-            all_text_feats = torch.cat(all_text_feats)
-            outputs['text_feats'] = all_text_feats
-        if len(all_rel_feats) > 0:
-            all_rel_feats = torch.cat(all_rel_feats)
-            outputs['rel_feats'] = all_rel_feats
-        out[key] = outputs
+                obj_offset += num_objs
 
-    return out
+            all_objs = torch.cat(all_objs)
+            all_boxes = torch.cat(all_boxes)
 
+            all_obj_to_scene = torch.cat(all_obj_to_scene)
 
-def collate_fn_vaegan_points(batch):
-    """ Wrapper of the function collate_fn_vaegan to make it also return points
-    """
-    return collate_fn_vaegan(batch, use_points=True)
+            if len(all_triples) > 0:
+                all_triples = torch.cat(all_triples)
+                all_triple_to_scene = torch.cat(all_triple_to_scene)
+            else:
+                return -1
+
+            outputs = {'objs': all_objs,
+                       'tripltes': all_triples,
+                       'boxes': all_boxes,
+                       'obj_to_scene': all_obj_to_scene,
+                       'triple_to_scene': all_triple_to_scene}
+
+            if len(all_text_feats) > 0:
+                all_text_feats = torch.cat(all_text_feats)
+                outputs['text_feats'] = all_text_feats
+            if len(all_rel_feats) > 0:
+                all_rel_feats = torch.cat(all_rel_feats)
+                outputs['rel_feats'] = all_rel_feats
+            out[key] = outputs
+
+        return out
 
 if __name__ == "__main__":
-    from model.atlasnet import AE_AtlasNet
-
-    saved_atlasnet_model = torch.load("../experiments/atlasnet/model_70.pth")
-    point_ae = AE_AtlasNet(num_points=1024, bottleneck_size=128, nb_primitives=25)
-    point_ae.load_state_dict(saved_atlasnet_model, strict=True)
-    if torch.cuda.is_available():
-        point_ae = point_ae.cuda()
-    point_ae.eval()
-    dataset = RIODatasetSceneGraph(
-        root="../GT",
-        root_3rscan="/media/ymxlzgy/DATA/3RScan",
-        label_file='labels.instances.align.annotated.ply',
-        npoints=1024,
-        path2atlas="./experiments/atlasnet/model_70.pth",
+    dataset = ThreedSSGDatasetSceneGraph(
+        root="/media/ymxlzgy/Data/Dataset/3DSSG/GT",
+        root_3rscan="/media/ymxlzgy/Data/Dataset/3RScan",
         split='train_scans',
         shuffle_objs=True,
-        use_points=False,
         use_scene_rels=True,
         with_changes=True,
-        vae_baseline=False,
-        with_feats=True,
         large=True,
-        atlas=point_ae,
         seed=False,
         use_splits=True,
         use_rio27=False,
         use_canonical=True,
+        with_CLIP=True,
         crop_floor=False,
         center_scene_to_floor=False,
-        recompute_feats=False)
+        recompute_clip=False
+    )
     a = dataset[10]
     print(a)

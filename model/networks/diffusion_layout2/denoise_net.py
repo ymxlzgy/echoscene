@@ -501,7 +501,8 @@ class UNet1DModel(nn.Module):
         concat_dim=None,                 # custom transformer support
         crossattn_dim=None,  # custom transformer support
         conditioning_key='crossattn',
-        using_clip=True
+        using_clip=True,
+        edge_classes=16
     ):
         super().__init__()
         # import pdb; pdb.set_trace()
@@ -718,7 +719,7 @@ class UNet1DModel(nn.Module):
         add_dim = 0
         if self.using_clip:
             add_dim = 512
-        self.pred_embeddings = nn.Embedding(16, gconv_dim * 2)
+        self.pred_embeddings = nn.Embedding(edge_classes, gconv_dim * 2)
         self.box_embeddings = nn.Linear(in_channels, gconv_dim)
         self.box_embeddings.apply(_init_weights)
         gconv_kwargs_box = {

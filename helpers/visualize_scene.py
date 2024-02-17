@@ -54,8 +54,9 @@ def get_current_visuals_v2(vocab, renderer, meshes, obj_ids):
 
     return OrderedDict(visuals)
 
-def create_floor(box_and_angle, cat_ids, classes):
+def create_bg(box_and_angle, cat_ids, classes, type='floor'):
     points_list_x = []
+    points_list_y = []
     points_list_z = []
     for j in range(0, box_and_angle.shape[0]):
         query_label = classes[cat_ids[j]].strip('\n')
@@ -63,21 +64,56 @@ def create_floor(box_and_angle, cat_ids, classes):
             continue
         box_points = params_to_8points_3dfront(box_and_angle[j], degrees=True)
         points_list_x.append(box_points[0:2, 0])
-        points_list_x.append(box_points[4:6, 0])
+        points_list_x.append(box_points[6:8, 0])
+        points_list_y.append(box_points[0:2, 1])
+        points_list_y.append(box_points[6:8, 1])
         points_list_z.append(box_points[0:2, 2])
-        points_list_z.append(box_points[4:6, 2])
+        points_list_z.append(box_points[6:8, 2])
+
     points_x = np.array(points_list_x).reshape(-1,1)
-    points_y = np.zeros(points_x.shape)
+    points_y = np.array(points_list_y).reshape(-1,1)
     points_z = np.array(points_list_z).reshape(-1,1)
     points = np.concatenate((points_x,points_y, points_z),axis=1)
     min_x, min_y, min_z = np.min(points, axis=0)
     max_x, max_y, max_z = np.max(points, axis=0)
-    vertices = np.array([[min_x, 0, min_z],
-                         [min_x, 0, max_z],
-                         [max_x, 0, max_z],
-                         [max_x, 0, min_z]], dtype=np.float32)
-    faces = np.array([[0, 1, 2], [0, 2, 3]])
-
+    if type == 'floor':
+        vertices = np.array([[min_x, min_y, min_z],
+                             [min_x, min_y, max_z],
+                             [max_x, min_y, max_z],
+                             [max_x, min_y, min_z]], dtype=np.float32)
+        faces = np.array([[0, 1, 2], [0, 2, 3]])
+    elif type == 'walls':
+        vertices1 = np.array([[min_x, min_y, min_z],
+                             [min_x, min_y, max_z],
+                             [min_x, max_y, max_z],
+                             [min_x, max_y, min_z]], dtype=np.float32) # min x
+        faces1 = np.array([[1, 0, 3], [1, 3, 2]])
+        vertices2 = np.array([[max_x, min_y, min_z],
+                                   [min_x, min_y, min_z],
+                                   [min_x, max_y, min_z],
+                                   [max_x, max_y, min_z]], dtype=np.float32) # min z
+        faces2 = np.array([[1, 0, 3], [1, 3, 2]])
+        vertices3 = np.array([[max_x, min_y, min_z],
+                                   [max_x, min_y, max_z],
+                                   [max_x, max_y, max_z],
+                                   [max_x, max_y, min_z]], dtype=np.float32) # max x
+        faces3 = np.array([[0, 1, 2], [0, 2, 3]])
+        vertices4 = np.array([[min_x, min_y, max_z],
+                                   [max_x, min_y, max_z],
+                                   [max_x, max_y, max_z],
+                                   [min_x, max_y, max_z]], dtype=np.float32) # max z
+        faces4 = np.array([[1, 0, 3], [1, 3, 2]])
+        vertices = np.concatenate([vertices1, vertices2, vertices3, vertices4])
+        faces = np.concatenate([faces1, faces2 + len(vertices1), faces3 + len(vertices1) + len(vertices2),
+                                faces4 + len(vertices1) + len(vertices2) + len(vertices3)])
+    elif type == 'ceiling':
+        vertices = np.array([[min_x, max_y, min_z],
+                             [min_x, max_y, max_z],
+                             [max_x, max_y, max_z],
+                             [max_x, max_y, min_z]], dtype=np.float32)
+        faces = np.array([[1, 0, 3], [1, 3, 2]])
+    else:
+        raise NotImplementedError
     return trimesh.Trimesh(vertices=vertices, faces=faces)
 
 
@@ -227,12 +263,14 @@ def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes,
                                                  colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'txt2shape':
+    elif render_type == 'txt2shape':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_sdfusion_models(box_and_angle, cats, classes, mesh_dir, render_boxes=render_boxes,
                                              colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'onlybox':
+    elif render_type == 'onlybox':
         lamp_mesh_list, trimesh_meshes = get_bbox(box_and_angle, cats, classes, colors=color_palette[cats], without_lamp=without_lamp)
+    else:
+        raise NotImplementedError
 
     if mani == 2:
         print("manipulated nodes: ", len(manipulated_nodes), len(trimesh_meshes))
@@ -277,8 +315,17 @@ def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=
         # trimesh_meshes = all_meshes
 
     if demo:
-        floor_mesh = create_floor(box_and_angle, cats, classes)
+        mesh_dir_shifted = mesh_dir.replace('object_meshes', 'object_meshes_shifted')
+        os.makedirs(mesh_dir_shifted, exist_ok=True)
+        trimesh_meshes += lamp_mesh_list
+        floor_mesh = create_bg(box_and_angle, cats, classes, type='floor')
         trimesh_meshes.append(floor_mesh)
+        ceiling_mesh = create_bg(box_and_angle, cats, classes, type='ceiling')
+        trimesh_meshes.append(ceiling_mesh)
+        walls_mesh = create_bg(box_and_angle, cats, classes, type='walls')
+        trimesh_meshes.append(walls_mesh)
+        for i, mesh in enumerate(trimesh_meshes):
+            mesh.export(os.path.join(mesh_dir_shifted, f"{i}.obj"))
     scene = trimesh.Scene(trimesh_meshes)
     scene_path = os.path.join(store_path, render_type)
     if len(str_append) > 0:
@@ -323,14 +370,16 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
     if render_type == 'cs++':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_models_v2(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'retrieval':
+    elif render_type == 'retrieval':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'txt2shape':
+    elif render_type == 'txt2shape':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_sdfusion_models(box_and_angle, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], no_stool=no_stool, without_lamp=without_lamp)
 
-    if render_type == 'onlybox':
+    elif render_type == 'onlybox':
         lamp_mesh_list, trimesh_meshes = get_bbox(box_and_angle, cats, classes, colors=color_palette[cats], without_lamp=without_lamp)
+    else:
+        raise NotImplementedError
 
     if mani == 2:
         print("manipulated nodes: ", len(manipulated_nodes), len(trimesh_meshes))
@@ -354,8 +403,17 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
             trimesh_meshes = objs_before
 
     if demo:
-        floor_mesh = create_floor(box_and_angle, cats, classes)
+        mesh_dir_shifted = mesh_dir.replace('object_meshes', 'object_meshes_shifted')
+        os.makedirs(mesh_dir_shifted, exist_ok=True)
+        trimesh_meshes += lamp_mesh_list
+        floor_mesh = create_bg(box_and_angle, cats, classes, type='floor')
         trimesh_meshes.append(floor_mesh)
+        ceiling_mesh = create_bg(box_and_angle, cats, classes, type='ceiling')
+        trimesh_meshes.append(ceiling_mesh)
+        walls_mesh = create_bg(box_and_angle, cats, classes, type='walls')
+        trimesh_meshes.append(walls_mesh)
+        for i, mesh in enumerate(trimesh_meshes):
+            mesh.export(os.path.join(mesh_dir_shifted, f"{i}.obj"))
     scene = trimesh.Scene(trimesh_meshes)
     if len(str_append) >0:
         # render_type_ = render_type + str_append

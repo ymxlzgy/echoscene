@@ -689,9 +689,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             all_objs, all_boxes, all_triples = [], [], []
             all_objs_grained = []
             all_obj_to_scene, all_triple_to_scene = [], []
-            all_points = []
             all_sdfs = []
-            all_feats = []
             all_text_feats = []
             all_rel_feats = []
 
@@ -703,9 +701,8 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                     continue
                 (objs, triples, boxes) = batch[i][key]['objs'], batch[i][key]['triples'], batch[i][key]['boxes']
 
-                if 'points' in batch[i][key]:
-                    all_points.append(batch[i][key]['points'])
-                elif 'sdfs' in batch[i][key]:
+
+                if 'sdfs' in batch[i][key]:
                     all_sdfs.append(batch[i][key]['sdfs'])
                 if 'text_feats' in batch[i][key]:
                     all_text_feats.append(batch[i][key]['text_feats'])
@@ -759,13 +756,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
 
             if len(all_sdfs) > 0:
                 outputs['sdfs'] = torch.cat(all_sdfs)
-            elif len(all_points) > 0:
-                all_points = torch.cat(all_points)
-                outputs['points'] = all_points
 
-            if len(all_feats) > 0:
-                all_feats = torch.cat(all_feats)
-                outputs['feats'] = all_feats
             if len(all_text_feats) > 0:
                 all_text_feats = torch.cat(all_text_feats)
                 outputs['text_feats'] = all_text_feats

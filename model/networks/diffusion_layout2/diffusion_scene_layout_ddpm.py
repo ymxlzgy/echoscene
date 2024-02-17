@@ -11,7 +11,7 @@ import clip
 
 class DiffusionSceneLayout_DDPM(Module):
 
-    def __init__(self, config, n_classes=None):
+    def __init__(self, config, edge_classes):
         super().__init__()
         self.device = config.hyper.device
         self.text_condition = config.layout_branch.get("text_condition", False)
@@ -32,6 +32,7 @@ class DiffusionSceneLayout_DDPM(Module):
         self.rel_condition = config.layout_branch.relation_condition
         # define the denoising network
         if config.layout_branch.denoiser == "unet1d":
+            config.layout_branch.denoiser_kwargs.edge_classes = edge_classes
             denoise_net = UNet1DModel(**config.layout_branch.denoiser_kwargs)
         else:
             raise NotImplementedError()
@@ -42,7 +43,6 @@ class DiffusionSceneLayout_DDPM(Module):
             config = config.layout_branch,
             **config.layout_branch.diffusion_kwargs
         )
-        self.n_classes = n_classes # not used
         self.config = config
         
         # read object property dimension
