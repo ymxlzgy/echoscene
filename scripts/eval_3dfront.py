@@ -369,12 +369,14 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
 
     for i, data in enumerate(test_dataloader_no_changes, 0):
         # print(data['scan_id'])
-        # if data['scan_id'][0] != 'LivingDiningRoom-13945':
+        # if data['scan_id'][0] != 'LivingDiningRoom-13945': # problematic room
         #     continue
         # if data['scan_id'][0].split('-')[0] not in ['DiningRoom', "LivingDiningRoom"]:
         #     continue
         # if data['scan_id'][0] not in ['MasterBedroom-58086','MasterBedroom-109561','Bedroom-11202', 'DiningRoom-2432', 'DiningRoom-451', 'DiningRoom-20718', 'LivingRoom-2050', 'LivingRoom-3540', 'LivingRoom-29294']:
             # continue
+        if data['scan_id'][0] != 'SecondBedroom-19119': # problematic room
+            continue
 
         try:
             dec_objs, dec_triples = data['decoder']['objs'], data['decoder']['tripltes']
@@ -420,7 +422,7 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
             print("rendering", [classes[i].strip('\n') for i in dec_objs])
             if model.type_ == 'cs++_l':
                 render_box(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
-                classes=classes, render_type=args.render_type, store_img=True, render_boxes=False, visual=False, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
+                classes=classes, render_type=args.render_type, store_img=True, render_boxes=False, visual=True, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
             elif model.type_ == 'cs++':
                 if shapes_pred is not None:
                     shapes_pred = shapes_pred.cpu().detach()
@@ -694,11 +696,11 @@ def evaluate():
 
     print('\nEditing Mode - Additions')
     reseed(47)
-    validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    # validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nEditing Mode - Relationship changes')
-    validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    # validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nGeneration Mode')
