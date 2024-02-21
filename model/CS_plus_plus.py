@@ -615,13 +615,20 @@ class Sg2ScDiffModel(nn.Module):
 
             self.LayoutDiff.set_input(diff_dict)
             gen_box_dict = self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
+
             if gen_shape:
+                # # relation embeddings -> diffusion
+                c_rel_feat_s = latent_obj_vecs
+                uc_rel_feat_s = self.rel_s_mlp(obj_embed_)  # embedding + CLIP
+                uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
+                c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
+                c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
                 sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
                 length = dec_objs.size(0)
                 zeros_tensor = torch.zeros_like(sdf_candidates[0])
                 mask = torch.ne(sdf_candidates, zeros_tensor)
                 ids = torch.unique(torch.where(mask)[0])
-                diff_dict = {'obj_cat': dec_objs[ids], 'rel': latent_obj_vecs_[ids], 'uc': obj_embed_[ids]}
+                diff_dict = {'obj_cat': dec_objs[ids], 'c_s': c_rel_feat_s[ids], 'uc_s': uc_rel_feat_s[ids]}
                 gen_sdf = self.ShapeDiff.rel2shape(diff_dict, uc_scale=3.)
 
             return {'shapes': gen_sdf}, gen_box_dict

@@ -227,23 +227,18 @@ class SDFusionText2ShapeModel(BaseModel):
         ############################ END: init diffusion params ############################
 
     def set_input(self, input=None, max_sample=None):
-        
-        self.x = input['sdf']
-
         self.rel = input['c_s']
-        B = self.x.shape[0]
+        B = self.rel.shape[0]
         self.uc_rel = input['uc_s']
         if self.df.conditioning_key == 'concat':
-            self.rel = self.rel.view(B,-1,16,16,16)
-            self.uc_rel = self.uc_rel.view(B,-1,16,16,16)
-        if max_sample is not None:
-            self.x = self.x[:max_sample]
-            self.rel = self.rel[:max_sample]
-            self.uc_rel = self.uc_rel[:max_sample]
-
-        vars_list = ['x']
-
-        self.tocuda(var_names=vars_list)
+            self.rel = self.rel.view(B, -1, 16, 16, 16)
+            self.uc_rel = self.uc_rel.view(B, -1, 16, 16, 16)
+        try:
+            self.x = input['sdf']
+            vars_list = ['x']
+            self.tocuda(var_names=vars_list)
+        except:
+            print('inference mode.. no sdf')
 
     def switch_train(self):
         self.df.train()
