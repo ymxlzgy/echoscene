@@ -400,9 +400,10 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             feats_rel = {}
             obj_cat = []
             with torch.no_grad():
-                for i in range(num_cat - 1):
+                for i in range(num_cat):
                     obj_cat.append(self.get_key(self.classes, cat_ids[i]))
                 if self.use_scene_rels:
+                    obj_cat.pop()
                     obj_cat.append('room') # TODO check
                 text_obj = clip.tokenize(obj_cat).to('cuda')
                 feats_ins = self.cond_model.encode_text(text_obj).detach().cpu().numpy()
