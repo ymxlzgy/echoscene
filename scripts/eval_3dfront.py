@@ -402,11 +402,7 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
             data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'],data_dict['translations']),dim=-1), data_dict['angles']
-            shapes_pred = None
-            try:
-                shapes_pred = data_dict['shapes']
-            except:
-                print('no shape, only run layout branch.')
+            shapes_pred = data_dict['shapes'] if gen_shape else None
             if modelArgs['bin_angle']:
                 angles_pred = -180 + (torch.argmax(angles_pred, dim=1, keepdim=True) + 1)* 15.0 # angle (previously minus 1, now add it back)
                 boxes_pred_den = batch_torch_destandardize_box_params(boxes_pred, file=normalized_file) # mean, std

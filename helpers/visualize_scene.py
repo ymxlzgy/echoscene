@@ -4,7 +4,7 @@ import open3d as o3d
 import numpy as np
 import trimesh
 
-from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_textured_objects, get_sdfusion_models, get_bbox, get_generated_models_v1, get_generated_models_v2, trimeshes_to_pytorch3d, normalize_py3d_meshes
+from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_textured_objects, get_sdfusion_models, get_bbox, get_generated_shapes, trimeshes_to_pytorch3d, normalize_py3d_meshes
 import json
 import torch
 import cv2
@@ -350,7 +350,7 @@ def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=
         return trimesh_meshes
 
 def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', classes=None, shapes_pred=None, render_type='txt2shape',
-           render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
+           store_img=False, render_boxes=False, demo=False, visual=False, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
     os.makedirs(store_path,exist_ok=True)
 
     if render_type not in ['cs++', 'txt2shape', 'retrieval', 'onlybox']:
@@ -368,7 +368,7 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
     mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id)
     os.makedirs(mesh_dir, exist_ok=True)
     if render_type == 'cs++':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_models_v2(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
+        lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_shapes(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
     elif render_type == 'retrieval':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_textured_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)

@@ -266,36 +266,7 @@ def pytorch3d_to_trimesh(pytorch3d_mesh):
     tri_mesh.invert()
     return tri_mesh
 
-def get_generated_models_v1(boxes, shapes, cat_ids, mesh_dir, classes, render_boxes=False, colors=None, without_lamp=False):
-    colors = iter(colors)
-    trimesh_meshes = iter(shapes)
-    obj_list = []
-    lamp_mesh_list = []
-    raw_obj_list = []
-    instance_id = 1
-    for j in range(0, boxes.shape[0]):
-        query_label = classes[cat_ids[j]].strip('\n')
-        if query_label == '_scene_' or query_label == 'floor':
-            continue
-        obj = next(trimesh_meshes)
-        color = next(colors)
-        obj.visual.vertex_colors = color
-        obj.visual.face_colors = color
-        raw_obj_list.append(obj.copy())
-        obj.export(os.path.join(mesh_dir, query_label + '_' + str(cat_ids[j]) + "_" + str(instance_id) + ".obj"))
-        instance_id += 1
-
-        box_points, obj = fit_shapes_to_box_v1(obj, boxes[j], degrees=True)
-        obj_list.append(obj)
-        if query_label == 'lamp' and without_lamp:
-            lamp_mesh_list.append(obj_list.pop())
-
-
-        if render_boxes:
-            obj_list.append(create_bbox_marker(box_points, color=color))
-    return lamp_mesh_list, obj_list, raw_obj_list
-
-def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
+def get_generated_shapes(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
     mesh_gen = sdf_to_mesh(shapes,render_all=True)
     colors = iter(colors)
     trimesh_meshes = iter([pytorch3d_to_trimesh(mesh) for mesh in mesh_gen])
@@ -318,11 +289,6 @@ def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_bo
 
         box_points, obj = fit_shapes_to_box_v2(obj, boxes[j], degrees=True)
         obj_list.append(obj)
-        # if query_label == 'bed':
-        #     obj.export('/media/ymxlzgy/Data/asset/bedv2.glb')
-        # if query_label == 'nightstand':
-        #     obj_list.pop()
-        #     render_boxes_ = False
         if query_label == 'lamp' and without_lamp:
             lamp_mesh_list.append(obj_list.pop())
 
