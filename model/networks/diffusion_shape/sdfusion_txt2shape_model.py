@@ -382,6 +382,32 @@ class SDFusionText2ShapeModel(BaseModel):
         self.gen_df = self.vqvae_module.decode_no_quant(samples)
         self.switch_train()
 
+    @torch.no_grad()
+    def gen_shape_after_foward_2(self, obj_idx, triplet_idx, ddim_eta=0., num_obj=2):
+        self.switch_eval()
+        ddim_steps = self.ddim_steps
+        uc_scale = self.uc_scale
+        obj_embed = self.uc_rel[obj_idx]
+        try:
+            triples = self.triples[triplet_idx]
+        except:
+            triples = None
+        c_rel = self.rel[obj_idx]
+        B = self.rel.shape[0]
+        shape = self.z_shape
+        samples, intermediates = self.ddim_sampler.sample(S=ddim_steps,
+                                                          batch_size=B,
+                                                          shape=shape,
+                                                          conditioning=c_rel,
+                                                          verbose=False,
+                                                          unconditional_guidance_scale=uc_scale,
+                                                          unconditional_conditioning=obj_embed,
+                                                          triplet=triples,
+                                                          eta=ddim_eta)
+        # decode z
+        self.gen_df = self.vqvae_module.decode_no_quant(samples[:num_obj])
+        self.switch_train()
+
 
     @torch.no_grad()
     def graph2shape(self, num_obj=6, ddim_steps=100, ddim_eta=0.0, uc_scale=None):

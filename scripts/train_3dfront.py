@@ -71,7 +71,7 @@ parser.add_argument('--network_type', default='cs++', choices=['cs++', 'cs++_l']
 parser.add_argument('--diff_yaml', default='../config/cs_full_mp.yaml', type=str,
                     help='config of the diffusion network [cross_attn/concat]')
 
-parser.add_argument('--vis_num', type=int, default=8, help='for visualization in the training')
+parser.add_argument('--vis_num', type=int, default=2, help='for visualization in the training')
 
 args = parser.parse_args()
 print(args)
@@ -153,7 +153,7 @@ def parse_data(data):
 
     return enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
            enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, \
-           encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, missing_nodes, changed_triples
+           encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, changed_triples
 
 
 
@@ -241,7 +241,7 @@ def train():
             try:
                 enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
                 enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs,\
-                encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, missing_nodes, manipulated_triples = parse_data(data)
+                encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_triples = parse_data(data)
             except Exception as e:
                 print('Exception', str(e))
                 continue
@@ -303,10 +303,12 @@ def train():
             # loss_diff = model.diff.ShapeDiff.get_current_errors()
             # model.diff.visualizer.print_current_errors(writer, counter, loss_diff, t)
             if counter % 10000 == 0 and obj_selected is not None:
-                model.diff.ShapeDiff.gen_shape_after_foward(num_obj=args.vis_num)
+                obj_selected = obj_selected.detach().cpu().numpy()
+                obj_idx = np.where(dec_objs_to_scene==0)[0]
+                triplet_idx = np.where(dec_triples_to_scene==0)[0]
+                model.diff.ShapeDiff.gen_shape_after_foward_2(obj_idx,triplet_idx, num_obj=args.vis_num)
                 model.diff.visualizer.display_current_results(writer, model.diff.ShapeDiff.get_current_visuals(
-                    dataset.classes_r, obj_selected.detach().cpu().numpy(), num_obj=args.vis_num),
-                                                                counter, phase='train')
+                    dataset.classes_r, obj_selected, num_obj=args.vis_num), counter, phase='train')
 
 
 
