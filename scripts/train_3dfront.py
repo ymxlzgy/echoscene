@@ -68,7 +68,7 @@ parser.add_argument('--loadmodel', default=False, type=bool_flag)
 parser.add_argument('--loadepoch', default=90, type=int, help='only valid when loadmodel is true')
 parser.add_argument('--replace_latent', default=True, type=bool_flag)
 parser.add_argument('--network_type', default='cs++', choices=['cs++', 'cs++_l'], type=str)
-parser.add_argument('--diff_yaml', default='../config/cs_full.yaml', type=str,
+parser.add_argument('--diff_yaml', default='../config/cs_full_mp.yaml', type=str,
                     help='config of the diffusion network [cross_attn/concat]')
 
 parser.add_argument('--vis_num', type=int, default=8, help='for visualization in the training')

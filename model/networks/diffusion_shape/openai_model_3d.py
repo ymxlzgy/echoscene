@@ -508,6 +508,7 @@ class UNet3DModel(nn.Module):
         legacy=True,
         using_clip=True,
         messsage_passing=False,
+        enable_t_emb=False,
         conditioning_key='concat'
     ):
         super().__init__()
@@ -772,6 +773,12 @@ class UNet3DModel(nn.Module):
                 'residual': True,
                 'output_dim': x_dim
             }
+
+            self.enable_t_emb = enable_t_emb
+            if self.enable_t_emb:
+                shape_t_dim = gconv_dim
+                self.shape_time_emb = nn.Linear(time_embed_dim, shape_t_dim)
+                gconv_kwargs_shape['input_dim_obj'] += shape_t_dim
             self.shape_code_graph_cov = GraphTripleConvNet(**gconv_kwargs_shape)
 
     def convert_to_fp16(self):
@@ -790,7 +797,7 @@ class UNet3DModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def shape_messsage_passing(self, obj_embed, triples, shape_code):
+    def shape_messsage_passing(self, obj_embed, triples, shape_code, t_emb=None, enable_t_emb=False):
         s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
         s, p, o = [i.squeeze(1) for i in [s, p, o]]  # Now have shape (T,)
         edges = torch.stack([s, o], dim=1)  # Shape is (T, 2)
@@ -799,6 +806,10 @@ class UNet3DModel(nn.Module):
             shape_code = module(shape_code)
         pred_embed = self.pred_embeddings(p)
         obj_shape_embed = torch.cat([obj_embed.squeeze(1), shape_code], dim=1)
+        if enable_t_emb:
+            assert t_emb is not None
+            t_emb = self.shape_time_emb(t_emb)
+            obj_shape_embed = torch.cat([obj_shape_embed, t_emb], dim=1)
         shape_rel_embed, _ = self.shape_code_graph_cov(obj_shape_embed, pred_embed, edges)
         return shape_rel_embed
 
@@ -811,14 +822,6 @@ class UNet3DModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if self.messsage_passing:
-            latent_box_rel = self.shape_messsage_passing(obj_embed, triples, shape_code=x)
-            if self.conditioning_key is None:
-                x = x
-            elif self.conditioning_key in ['concat', 'hybrid']:
-                x = torch.cat([x, latent_box_rel.view(-1,1,16,16,16)], dim=1) # x now has origin_x, context, and latent_box_rel based on obj_embed(uc_context)
-            elif self.conditioning_key in ['crossattn', 'hybrid']:
-                context = latent_box_rel.unsqueeze(1) # we dont use the previous context
 
         assert (y is not None) == (
             self.num_classes is not None
@@ -830,6 +833,15 @@ class UNet3DModel(nn.Module):
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
+
+        if self.messsage_passing:
+            latent_shape_rel = self.shape_messsage_passing(obj_embed, triples, shape_code=x, t_emb=emb, enable_t_emb=self.enable_t_emb)
+            if self.conditioning_key is None:
+                x = x
+            elif self.conditioning_key in ['concat', 'hybrid']:
+                x = torch.cat([x, latent_shape_rel.view(-1,1,16,16,16)], dim=1) # x now has origin_x, context, and latent_box_rel based on obj_embed(uc_context)
+            elif self.conditioning_key in ['crossattn', 'hybrid']:
+                context = latent_shape_rel.unsqueeze(1) # we dont use the previous context
 
         # import pdb; pdb.set_trace()
         # h = x.type(self.dtype)

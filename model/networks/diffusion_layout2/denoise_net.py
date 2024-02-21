@@ -501,7 +501,8 @@ class UNet1DModel(nn.Module):
         concat_dim=None,                 # custom transformer support
         crossattn_dim=None,  # custom transformer support
         conditioning_key='crossattn',
-        using_clip=True
+        using_clip=True,
+        enable_t_emb=False
     ):
         super().__init__()
         # import pdb; pdb.set_trace()
@@ -731,6 +732,11 @@ class UNet1DModel(nn.Module):
             'residual': True,
             'output_dim': concat_dim
         }
+        self.enable_t_emb = enable_t_emb
+        if self.enable_t_emb:
+            box_t_dim = gconv_dim
+            gconv_kwargs_box['input_dim_obj'] += box_t_dim
+            self.box_time_emb = nn.Linear(time_embed_dim, box_t_dim)
         self.box_graph_cov = GraphTripleConvNet(**gconv_kwargs_box)
 
     def convert_to_fp16(self):
@@ -749,7 +755,7 @@ class UNet1DModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def box_messsage_passing(self, obj_embed, triples, box_t):
+    def box_messsage_passing(self, obj_embed, triples, box_t, t_emb=None, enable_t_emb=False):
         s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
         s, p, o = [i.squeeze(1) for i in [s, p, o]]  # Now have shape (T,)
         edges = torch.stack([s, o], dim=1)  # Shape is (T, 2)
@@ -757,7 +763,11 @@ class UNet1DModel(nn.Module):
         box_embed = self.box_embeddings(box_t)
         pred_embed = self.pred_embeddings(p)
         obj_box_embed = torch.cat([obj_embed, box_embed], dim=1)
-        box_rel_embed, _ = self.box_graph_cov(obj_box_embed,pred_embed,edges)
+        if enable_t_emb:
+            assert t_emb is not None
+            t_emb = self.box_time_emb(t_emb)
+            obj_box_embed = torch.cat([obj_box_embed, t_emb], dim=1)
+        box_rel_embed, _ = self.box_graph_cov(obj_box_embed, pred_embed, edges)
         return box_rel_embed
 
     def forward(self, box_t, obj_embed, triples, timesteps=None, context=None,**kwargs):
@@ -769,15 +779,17 @@ class UNet1DModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        latent_box_rel = self.box_messsage_passing(obj_embed, triples, box_t)
-        box_t, latent_box_rel = box_t.unsqueeze(1), latent_box_rel.unsqueeze(1)
-        if self.conditioning_key in ['concat','hybrid']:
-            box_t = torch.cat([box_t, latent_box_rel], dim=-1)
-        elif self.conditioning_key in ['crossattn','hybrid']:
-            context = latent_box_rel
+
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
+
+        latent_box_rel = self.box_messsage_passing(obj_embed, triples, box_t, t_emb=emb, enable_t_emb=self.enable_t_emb)
+        box_t, latent_box_rel = box_t.unsqueeze(1), latent_box_rel.unsqueeze(1)
+        if self.conditioning_key in ['concat', 'hybrid']:
+            box_t = torch.cat([box_t, latent_box_rel], dim=-1)
+        elif self.conditioning_key in ['crossattn', 'hybrid']:
+            context = latent_box_rel
 
         # import pdb; pdb.set_trace()
         # h = x.type(self.dtype)
