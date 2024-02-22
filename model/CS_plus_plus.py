@@ -530,7 +530,7 @@ class Sg2ScDiffModel(nn.Module):
             change_repr.append(torch.from_numpy(noisechange).float().cuda())
         change_repr = torch.stack(change_repr, dim=0)
         latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
-        obj_embed_, pred_embed_ , latent_obj_vecs_, pred_vecs_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
+        latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
 
         if not self.replace_all_latent:
             # take original nodes when untouched
@@ -599,9 +599,9 @@ class Sg2ScDiffModel(nn.Module):
                                                                                     dec_triplets, encoded_dec_text_feat,
                                                                                     encoded_dec_rel_feat)  # normal message passing
 
-            diff_dict = self.prepare_boxes(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
+            box_diff_dict = self.prepare_boxes(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
 
-            self.LayoutDiff.set_input(diff_dict)
+            self.LayoutDiff.set_input(box_diff_dict)
             gen_box_dict = self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
             if gen_shape:
@@ -616,8 +616,8 @@ class Sg2ScDiffModel(nn.Module):
                 zeros_tensor = torch.zeros_like(sdf_candidates[0])
                 mask = torch.ne(sdf_candidates, zeros_tensor)
                 ids = torch.unique(torch.where(mask)[0])
-                diff_dict = {'obj_cat': dec_objs[ids], 'c_s': c_rel_feat_s[ids], 'uc_s': uc_rel_feat_s[ids]}
-                gen_sdf = self.ShapeDiff.rel2shape(diff_dict, uc_scale=3.)
+                shape_diff_dict = {'obj_cat': dec_objs[ids], 'c_s': c_rel_feat_s[ids], 'uc_s': uc_rel_feat_s[ids]}
+                gen_sdf = self.ShapeDiff.rel2shape(shape_diff_dict, uc_scale=3.)
 
             return {'shapes': gen_sdf}, gen_box_dict
 
