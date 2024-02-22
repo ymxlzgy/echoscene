@@ -226,25 +226,19 @@ class SDFusionText2ShapeModel(BaseModel):
         assert not torch.isnan(self.lvlb_weights).all()
         ############################ END: init diffusion params ############################
 
-    def set_input(self, input=None, max_sample=None):
-        
-        self.x = input['sdf']
-
+    def set_input(self, input=None):
         self.rel = input['c_s']
-        B = self.x.shape[0]
+        B = self.rel.shape[0]
         self.uc_rel = input['uc_s']
         self.triples = input.get('triples', None)
-
         if self.df.conditioning_key == 'concat':
             self.rel = self.rel.view(B,-1,16,16,16)
-        if max_sample is not None:
-            self.x = self.x[:max_sample]
-            self.rel = self.rel[:max_sample]
-            self.uc_rel = self.uc_rel[:max_sample]
-
-        vars_list = ['x']
-
-        self.tocuda(var_names=vars_list)
+        try:
+            self.x = input['sdf']
+            vars_list = ['x']
+            self.tocuda(var_names=vars_list)
+        except:
+            print('inference mode.. no gt sdf')
 
     def switch_train(self):
         self.df.train()
@@ -480,22 +474,20 @@ class SDFusionText2ShapeModel(BaseModel):
         self.switch_train()
 
     @torch.no_grad()
-    def rel2shape(self, data, ddim_steps=100, ddim_eta=0.0, uc_scale=None):
+    def rel2shape(self, data, ddim_eta=0.0):
         self.switch_eval()
         self.set_input(data)
-
         ddim_sampler = DDIMSampler(self)
-
-        if ddim_steps is None:
-            ddim_steps = self.ddim_steps
-
-        if uc_scale is None:
-            uc_scale = self.scale
-
+        ddim_steps = self.ddim_steps
+        uc_scale = self.uc_scale
+        try:
+            triples = self.triples
+        except:
+            triples = None
         # get noise, denoise, and decode with vqvae
-        uc = self.uc_rel
-        c_text = self.rel
-        B = c_text.shape[0]
+        obj_embed = self.uc_rel
+        c_rel = self.rel
+        B = c_rel.shape[0]
         shape = self.z_shape
 
         demo_ = 0
@@ -513,27 +505,39 @@ class SDFusionText2ShapeModel(BaseModel):
             single_noise = torch.randn(size, device='cuda')
             noise = single_noise.repeat(B, 1, 1, 1, 1)
 
-        mini_B = 7
-        number_mini_B = np.ceil(B / mini_B).astype(int)
-        rest = B
-        gen_df_list = []
-        for i in range(number_mini_B):
+        # TODO support partial scene generation. Is it possible?
+        # mini_B = 7
+        # number_mini_B = np.ceil(B / mini_B).astype(int)
+        # rest = B
+        # gen_df_list = []
+        # for i in range(number_mini_B):
+        #
+        #     num = np.min((mini_B,rest)).astype(int)
+        #     samples_mini, intermediates = ddim_sampler.sample(S=ddim_steps,
+        #                                                  batch_size=num,
+        #                                                  shape=shape,
+        #                                                  conditioning=c_text[i*mini_B:(i+1)*mini_B],
+        #                                                  x_T=noise[i*mini_B:(i+1)*mini_B],
+        #                                                  verbose=False,
+        #                                                  unconditional_guidance_scale=uc_scale,
+        #                                                  unconditional_conditioning=uc[i*mini_B:(i+1)*mini_B],
+        #                                                  eta=ddim_eta)
+        #     rest -= num
+        #     # decode z
+        #     gen_df_list.append(self.vqvae_module.decode_no_quant(samples_mini))
+        # self.gen_df = torch.cat(gen_df_list,dim=0)
 
-            num = np.min((mini_B,rest)).astype(int)
-            samples_mini, intermediates = ddim_sampler.sample(S=ddim_steps,
-                                                         batch_size=num,
+        samples, intermediates = ddim_sampler.sample(S=ddim_steps,
+                                                         batch_size=B,
                                                          shape=shape,
-                                                         conditioning=c_text[i*mini_B:(i+1)*mini_B],
-                                                         x_T=noise[i*mini_B:(i+1)*mini_B],
+                                                         conditioning=c_rel,
+                                                         x_T=noise,
                                                          verbose=False,
                                                          unconditional_guidance_scale=uc_scale,
-                                                         unconditional_conditioning=uc[i*mini_B:(i+1)*mini_B],
+                                                         unconditional_conditioning=obj_embed,
+                                                         triplet=triples,
                                                          eta=ddim_eta)
-            rest -= num
-            # decode z
-            gen_df_list.append(self.vqvae_module.decode_no_quant(samples_mini))
-
-        self.gen_df = torch.cat(gen_df_list,dim=0)
+        self.gen_df = self.vqvae_module.decode_no_quant(samples)
 
 
         return self.gen_df

@@ -204,7 +204,7 @@ class Sg2ScDiffModel(nn.Module):
         obj_vecs_ = torch.cat([latent_f, obj_embed], dim=1)
         obj_vecs_, pred_vecs_ = self.gconv_net_manipulation(obj_vecs_, pred_embed, edges)
 
-        return obj_embed, pred_embed, obj_vecs_, pred_vecs_
+        return obj_vecs_, pred_vecs_, obj_embed, pred_embed
 
     # def decoder(self, z, objs, triples, dec_text_feat, dec_rel_feat, attributes, manipulate=False):
     #     s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
@@ -585,7 +585,7 @@ class Sg2ScDiffModel(nn.Module):
             change_repr.append(torch.from_numpy(noisechange).float().cuda())
         change_repr = torch.stack(change_repr, dim=0)
         latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
-        obj_embed_, pred_embed_ , latent_obj_vecs_, pred_vecs_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
+        latent_obj_vecs_, pred_vecs_ , obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triples, dec_text_feat, dec_rel_feat) # contains all obj now
 
         if not self.replace_all_latent:
             # take original nodes when untouched
@@ -641,51 +641,39 @@ class Sg2ScDiffModel(nn.Module):
     #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
     #     return mu, logvar, dec_man_enc_pred, keep
 
-    def sampleShape(self, point_classes_idx, point_ae, mean_est_shape, cov_est_shape, dec_objs, dec_triplets,
-                    attributes=None):
+    def sample(self, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=False):
         with torch.no_grad():
-            z_shape = []
-            for idxz in dec_objs:
-                idxz = int(idxz.cpu())
-                if idxz in point_classes_idx:
-                    z_shape.append(torch.from_numpy(
-                        np.random.multivariate_normal(mean_est_shape[idxz], cov_est_shape[idxz], 1)).float().cuda())
-                else:
-                    z_shape.append(torch.from_numpy(np.random.multivariate_normal(mean_est_shape[-1],
-                                                                                  cov_est_shape[-1],
-                                                                                  1)).float().cuda())
-            z_shape = torch.cat(z_shape, 0)
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets,
+                                                                                         encoded_dec_text_feat,
+                                                                                         encoded_dec_rel_feat)
+            change_repr = []
+            for i in range(len(latent_obj_vecs)):
+                noisechange = np.zeros(self.embedding_dim)
+                change_repr.append(torch.from_numpy(noisechange).float().cuda())
+            change_repr = torch.stack(change_repr, dim=0)
+            latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
+            latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs,
+                                                                                    dec_triplets, encoded_dec_text_feat,
+                                                                                    encoded_dec_rel_feat)  # normal message passing
 
-            dc_shapes = self.decoder(z_shape, dec_objs, dec_triplets, attributes)
-            points = point_ae.forward_inference_from_latent_space(dc_shapes, point_ae.get_grid())
-        return points, dc_shapes
+            box_diff_dict = self.prepare_boxes(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
 
-    def sampleBoxes(self, mean_est, cov_est, dec_objs, dec_triplets, attributes=None):
-        with torch.no_grad():
-            z = torch.from_numpy(
-            np.random.multivariate_normal(mean_est, cov_est, dec_objs.size(0))).float().cuda()
+            self.LayoutDiff.set_input(box_diff_dict)
+            gen_box_dict = self.LayoutDiff.generate_layout_sg(
+                box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
-            return self.decoder(z, dec_objs, dec_triplets, attributes)
-
-    def sample(self, point_classes_idx, mean_est, cov_est, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, attributes=None, gen_shape=False):
-        with torch.no_grad():
-            z = torch.from_numpy(np.random.multivariate_normal(mean_est, cov_est, dec_objs.size(0))).float().cuda()
-            gen_sdf = None
             if gen_shape:
-                un_rel_feat, rel_feat = self.encoder_2(z, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes)
-                sdf_candidates = dec_sdfs
-                length = dec_objs.size(0)
-                zeros_tensor = torch.zeros_like(sdf_candidates[0])
-                mask = torch.ne(sdf_candidates, zeros_tensor)
-                ids = torch.unique(torch.where(mask)[0])
-                obj_selected = dec_objs[ids]
-                if rel_feat == None:
-                    rel_feat = un_rel_feat
-                diff_dict = {'sdf': dec_sdfs[ids], 'rel': rel_feat[ids], 'uc': un_rel_feat[ids]}
-                gen_sdf = self.ShapeDiff.rel2shape(diff_dict,uc_scale=3.)
+                # # relation embeddings -> diffusion
+                c_rel_feat_s = latent_obj_vecs_
+                uc_rel_feat_s = self.rel_s_mlp(obj_embed_)  # embedding + CLIP
+                uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
+                c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
+                c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
+                sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
+                shape_diff_dict = {'obj_cat': dec_objs, 'triplet': dec_triplets, 'c_s': c_rel_feat_s, 'uc_s': uc_rel_feat_s}
+                gen_sdf = self.ShapeDiff.rel2shape(shape_diff_dict, uc_scale=3.)
 
-
-            return self.decoder(z, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat, attributes), gen_sdf
+            return {'shapes': gen_sdf}, gen_box_dict
 
     def state_dict(self, epoch, counter):
         state_dict_1_layout = super(Sg2ScDiffModel, self).state_dict()
