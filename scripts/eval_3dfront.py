@@ -683,7 +683,7 @@ def evaluate():
                 with_changes=with_changes_, residual=modelArgs['residual'], gconv_pooling=modelArgs['pooling'], clip=modelArgs['with_CLIP'],
                 with_angles=modelArgs['with_angles'], separated=modelArgs['separated'])
     model.diff.optimizer_ini()
-    model.load_networks(exp=args.exp, epoch=args.epoch, restart_optim=False)
+    model.load_networks(exp=args.exp, epoch=args.epoch, restart_optim=False, load_shape_branch=args.gen_shape)
     if torch.cuda.is_available():
         model = model.cuda()
 

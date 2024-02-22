@@ -199,7 +199,7 @@ class Sg2ScDiffModel(nn.Module):
         obj_vecs_ = torch.cat([latent_f, obj_embed], dim=1)
         obj_vecs_, pred_vecs_ = self.gconv_net_manipulation(obj_vecs_, pred_embed, edges)
 
-        return obj_embed, pred_embed, obj_vecs_, pred_vecs_
+        return obj_vecs_, pred_vecs_, obj_embed, pred_embed
 
     # def decoder(self, z, objs, triples, dec_text_feat, dec_rel_feat, attributes, manipulate=False):
     #     s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
@@ -588,9 +588,7 @@ class Sg2ScDiffModel(nn.Module):
 
     def sample(self, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=False):
         with torch.no_grad():
-            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets,
-                                                                                         encoded_dec_text_feat,
-                                                                                         encoded_dec_rel_feat)
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
             change_repr = []
             for i in range(len(latent_obj_vecs)):
                 noisechange = np.zeros(self.embedding_dim)
@@ -600,16 +598,6 @@ class Sg2ScDiffModel(nn.Module):
             latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs,
                                                                                     dec_triplets, encoded_dec_text_feat,
                                                                                     encoded_dec_rel_feat)  # normal message passing
-
-            ## relation embeddings -> diffusion
-            # c_rel_feat_b = latent_obj_vecs_
-            # if self.s_l_separated:
-            #     c_rel_feat_b, _ = self.layout_encoder(latent_obj_vecs_, obj_embed_, pred_embed_, dec_triplets)
-            # uc_rel_feat_b = self.rel_l_mlp(obj_embed_)
-            # uc_rel_feat_b = torch.unsqueeze(uc_rel_feat_b, dim=1)
-            #
-            # c_rel_feat_b = self.rel_l_mlp(c_rel_feat_b)
-            # c_rel_feat_b = torch.unsqueeze(c_rel_feat_b, dim=1)
 
             diff_dict = self.prepare_boxes(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
 
