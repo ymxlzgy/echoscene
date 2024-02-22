@@ -295,7 +295,7 @@ def pytorch3d_to_trimesh(pytorch3d_mesh):
 #             obj_list.append(create_bbox_marker(box_points, color=color))
 #     return lamp_mesh_list, obj_list, raw_obj_list
 
-def get_generated_models_v2(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
+def get_generated_shapes(boxes, shapes, cat_ids, classes, mesh_dir, render_boxes=False, colors=None, without_lamp=False):
     mesh_gen = sdf_to_mesh(shapes,render_all=True)
     colors = iter(colors)
     trimesh_meshes = iter([pytorch3d_to_trimesh(mesh) for mesh in mesh_gen])

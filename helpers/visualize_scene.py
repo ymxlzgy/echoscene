@@ -4,7 +4,7 @@ import open3d as o3d
 import numpy as np
 import trimesh
 
-from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_database_objects, get_sdfusion_models, get_bbox, get_generated_models_v2, trimeshes_to_pytorch3d, normalize_py3d_meshes
+from helpers.util import fit_shapes_to_box, params_to_8points, params_to_8points_no_rot, params_to_8points_3dfront, get_database_objects, get_sdfusion_models, get_bbox, get_generated_shapes, trimeshes_to_pytorch3d, normalize_py3d_meshes
 import json
 import torch
 import cv2
@@ -351,7 +351,7 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
            render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
     os.makedirs(store_path,exist_ok=True)
 
-    if render_type not in ['cs++', 'txt2shape', 'retrieval', 'onlybox']:
+    if render_type not in ['cs++_mp', 'txt2shape', 'retrieval', 'onlybox']:
         raise ValueError('Render type needs to be either set to v2 or txt2shape or retrieval or onlybox.')
     color_palette = np.array(sns.color_palette('hls', len(classes)))
     box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=1)
@@ -363,19 +363,21 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
         elif len(manipulated_nodes) > 0:
             box_and_angle = box_and_angle[sorted(manipulated_nodes)]
 
-    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id)
+    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id[0])
     os.makedirs(mesh_dir, exist_ok=True)
-    if render_type == 'cs++':
-        lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_models_v2(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
+    if render_type == 'cs++_mp':
+        lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_shapes(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'retrieval':
+    elif render_type == 'retrieval':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_database_objects(box_and_angle, datasize, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
-    if render_type == 'txt2shape':
+    elif render_type == 'txt2shape':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_sdfusion_models(box_and_angle, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], no_stool=no_stool, without_lamp=without_lamp)
 
-    if render_type == 'onlybox':
+    elif render_type == 'onlybox':
         lamp_mesh_list, trimesh_meshes = get_bbox(box_and_angle, cats, classes, colors=color_palette[cats], without_lamp=without_lamp)
+    else:
+        raise NotImplementedError
 
     if mani == 2:
         print("manipulated nodes: ", len(manipulated_nodes), len(trimesh_meshes))
@@ -401,8 +403,15 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
     if demo:
         mesh_dir_shifted = mesh_dir.replace('object_meshes', 'object_meshes_shifted')
         os.makedirs(mesh_dir_shifted, exist_ok=True)
-        floor_mesh = create_floor(box_and_angle, cats, classes)
+        trimesh_meshes += lamp_mesh_list
+        floor_mesh = create_bg(box_and_angle, cats, classes, type='floor')
         trimesh_meshes.append(floor_mesh)
+        ceiling_mesh = create_bg(box_and_angle, cats, classes, type='ceiling')
+        trimesh_meshes.append(ceiling_mesh)
+        walls_mesh = create_bg(box_and_angle, cats, classes, type='walls')
+        trimesh_meshes.append(walls_mesh)
+        for i, mesh in enumerate(trimesh_meshes):
+            mesh.export(os.path.join(mesh_dir_shifted, f"{i}.obj"))
     scene = trimesh.Scene(trimesh_meshes)
     if len(str_append) >0:
         # render_type_ = render_type + str_append

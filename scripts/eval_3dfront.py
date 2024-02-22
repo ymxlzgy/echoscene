@@ -34,7 +34,7 @@ parser.add_argument('--with_CLIP', type=bool_flag, default=True, help="Load Feat
 parser.add_argument('--manipulate', default=True, type=bool_flag)
 parser.add_argument('--exp', default='../experiments/layout_test', help='experiment name')
 parser.add_argument('--epoch', type=str, default='100', help='saved epoch')
-parser.add_argument('--render_type', type=str, default='txt2shape', help='retrieval, txt2shape, onlybox, full')
+parser.add_argument('--render_type', type=str, default='txt2shape', help='retrieval, txt2shape, onlybox, cs++_mp')
 parser.add_argument('--evaluate_diversity', type=bool_flag, default=False, help='Computes diversity based on multiple predictions')
 parser.add_argument('--gen_shape', default=False, type=bool_flag, help='infer diffusion')
 parser.add_argument('--visualize', default=False, type=bool_flag)
@@ -369,8 +369,8 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
 
     for i, data in enumerate(test_dataloader_no_changes, 0):
         # print(data['scan_id'])
-        if data['scan_id'][0] != 'LivingDiningRoom-19784':
-            continue
+        # if data['scan_id'][0] != 'LivingDiningRoom-19784':
+        #     continue
         # if data['scan_id'][0].split('-')[0] not in ['DiningRoom', "LivingDiningRoom"]:
         #     continue
         # if data['scan_id'][0] not in ['MasterBedroom-58086','MasterBedroom-109561','Bedroom-11202', 'DiningRoom-2432', 'DiningRoom-451', 'DiningRoom-20718', 'LivingRoom-2050', 'LivingRoom-3540', 'LivingRoom-29294']:
@@ -687,7 +687,7 @@ def evaluate():
                 with_changes=with_changes_, residual=modelArgs['residual'], gconv_pooling=modelArgs['pooling'], clip=modelArgs['with_CLIP'],
                 with_angles=modelArgs['with_angles'], separated=modelArgs['separated'])
     model.diff.optimizer_ini()
-    model.load_networks(exp=args.exp, epoch=args.epoch, restart_optim=False)
+    model.load_networks(exp=args.exp, epoch=args.epoch, restart_optim=True, load_shape_branch=args.gen_shape)
     if torch.cuda.is_available():
         model = model.cuda()
 

@@ -662,6 +662,7 @@ class Sg2ScDiffModel(nn.Module):
             gen_box_dict = self.LayoutDiff.generate_layout_sg(
                 box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
+            gen_sdf = None
             if gen_shape:
                 # # relation embeddings -> diffusion
                 c_rel_feat_s = latent_obj_vecs_

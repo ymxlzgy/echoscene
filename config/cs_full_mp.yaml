@@ -36,7 +36,7 @@ layout_branch:
         concat_dim: 1280
         crossattn_dim: 1280
         use_checkpoint: true
-        enable_t_emb: True
+        enable_t_emb: false
 
     diffusion_kwargs:
       schedule_type: 'linear'
