@@ -86,7 +86,10 @@ class SGDiff(nn.Module):
             self.counter = ckpt.pop('counter')
         except:
             print('no epoch or counter recorded.')
-        self.diff.load_state_dict(ckpt, strict=strict)
+
+        ckpt.pop('vqvae', None)
+        ckpt.pop('shape_df', None)
+        self.diff.load_state_dict(ckpt, strict=strict) # only layout
         print(colored('[*] GCN and layout branch has successfully been restored from: %s' % os.path.join(exp, 'checkpoint',
                                                                                     'model{}.pth'.format(epoch)),
                       'blue'))
