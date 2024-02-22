@@ -384,9 +384,14 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 clip_feats_ins = clip_feats_dic['instance_feats']
                 clip_feats_order = np.asarray(clip_feats_dic['instance_order'])
                 ordered_feats = []
-                for inst in instances_order:
-                    clip_feats_in_instance = inst == clip_feats_order
-                    ordered_feats.append(clip_feats_ins[clip_feats_in_instance])
+                if len(clip_feats_ins) - len(clip_feats_order) == 1:  # there is a _scene_ inside the file
+                    for inst in instances_order:
+                        clip_feats_in_instance = inst == clip_feats_order
+                        ordered_feats.append(clip_feats_ins[:-1][clip_feats_in_instance])
+                else:
+                    for inst in instances_order:
+                        clip_feats_in_instance = inst == clip_feats_order
+                        ordered_feats.append(clip_feats_ins[clip_feats_in_instance])
                 if self.use_scene_rels:
                     ordered_feats.append(clip_feats_ins[-1][np.newaxis,:]) # should be room's feature
                 clip_feats_ins = list(np.concatenate(ordered_feats, axis=0))
