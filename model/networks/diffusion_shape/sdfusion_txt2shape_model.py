@@ -238,7 +238,7 @@ class SDFusionText2ShapeModel(BaseModel):
             vars_list = ['x']
             self.tocuda(var_names=vars_list)
         except:
-            print('inference mode.. no sdf')
+            print('inference mode.. no gt sdf')
 
     def switch_train(self):
         self.df.train()

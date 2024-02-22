@@ -618,7 +618,7 @@ class Sg2ScDiffModel(nn.Module):
 
             if gen_shape:
                 # # relation embeddings -> diffusion
-                c_rel_feat_s = latent_obj_vecs
+                c_rel_feat_s = latent_obj_vecs_
                 uc_rel_feat_s = self.rel_s_mlp(obj_embed_)  # embedding + CLIP
                 uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
                 c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
@@ -632,6 +632,23 @@ class Sg2ScDiffModel(nn.Module):
                 gen_sdf = self.ShapeDiff.rel2shape(diff_dict, uc_scale=3.)
 
             return {'shapes': gen_sdf}, gen_box_dict
+
+    def sampleBoxes(self, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat):
+        with torch.no_grad():
+            obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
+            change_repr = []
+            for i in range(len(latent_obj_vecs)):
+                noisechange = np.zeros(self.embedding_dim)
+                change_repr.append(torch.from_numpy(noisechange).float().cuda())
+            change_repr = torch.stack(change_repr, dim=0)
+            latent_obj_vecs_ = torch.cat([latent_obj_vecs, change_repr], dim=1)
+            latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat) # normal message passing
+
+            box_diff_dict = self.prepare_input(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
+
+            self.LayoutDiff.set_input(box_diff_dict)
+
+            return self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)
 
     def state_dict(self, epoch, counter):
         state_dict_1_layout = super(Sg2ScDiffModel, self).state_dict()

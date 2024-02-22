@@ -365,7 +365,7 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
         elif len(manipulated_nodes) > 0:
             box_and_angle = box_and_angle[sorted(manipulated_nodes)]
 
-    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id)
+    mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id[0])
     os.makedirs(mesh_dir, exist_ok=True)
     if render_type == 'cs++':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_shapes(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
