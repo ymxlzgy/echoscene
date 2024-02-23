@@ -204,6 +204,17 @@ class DDIMSampler(object):
             e_t = e_t_uncond + \
                   unconditional_guidance_scale * img_w * (e_t_img - e_t_uncond) + \
                   unconditional_guidance_scale * txt_w * (e_t_txt - e_t_uncond)
+        elif True:
+            x_in = x
+            t_in = t
+            uc_in = unconditional_conditioning
+            c_in = c
+            try:
+                trip_in = triplet
+            except:
+                trip_in = None
+            e_t_uncond = self.model.apply_model(x_in, uc_in, trip_in, t_in, c_in)
+            e_t = e_t_uncond
         else:
             x_in = torch.cat([x] * 2)
             t_in = torch.cat([t] * 2)
