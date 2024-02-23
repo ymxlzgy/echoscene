@@ -107,9 +107,14 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
                                                                                               data['decoder']['boxes'], \
                                                                                               data['decoder']['obj_to_scene'], \
                                                                                               data['decoder']['triple_to_scene']
-            dec_sdfs = None
+            dec_sdfs, obj_ids = None, None
             if modelArgs['with_SDF']:
                 dec_sdfs = data['decoder']['sdfs']
+                sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
+                length = dec_objs.size(0)
+                zeros_tensor = torch.zeros_like(sdf_candidates[0])
+                mask = torch.ne(sdf_candidates, zeros_tensor)
+                obj_ids = torch.unique(torch.where(mask)[0])
 
             missing_nodes = data['missing_nodes']
             manipulated_subs = data['manipulated_subs']
@@ -117,7 +122,7 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
             manipulated_preds = data['manipulated_preds']
 
         except Exception as e:
-            print("Exception: skipping scene", e)
+            print("Please check. Exception: skipping scene", e)
             continue
 
         enc_objs, enc_triples = enc_objs.cuda(), enc_triples.cuda()
@@ -136,12 +141,12 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
                 manipulated_nodes = manipulated_subs + manipulated_objs
                 keep, data_dict = model.sample_boxes_and_shape_with_changes(enc_objs, enc_triples, encoded_enc_text_feat,
                                                                             encoded_enc_rel_feat, dec_objs, dec_triples,
-                                                                            dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                            obj_ids, encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                             manipulated_nodes, gen_shape=gen_shape)
             else:
                 keep, data_dict = model.sample_boxes_and_shape_with_additions(enc_objs, enc_triples, encoded_enc_text_feat,
                                                                               encoded_enc_rel_feat, dec_objs, dec_triples,
-                                                                              dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                              obj_ids, encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                               missing_nodes, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'], data_dict['translations']), dim=-1), data_dict['angles']
@@ -361,11 +366,11 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
 
     all_pred_shapes_exp = {} # for export
     all_pred_boxes_exp = {}
-    bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
-
-    with open(bbox_file, "r") as read_file:
-        box_data = json.load(read_file)
-        box_data['chair'].update(box_data['stool'])
+    # bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
+    #
+    # with open(bbox_file, "r") as read_file:
+    #     box_data = json.load(read_file)
+    #     box_data['chair'].update(box_data['stool'])
 
     for i, data in enumerate(test_dataloader_no_changes, 0):
         # print(data['scan_id'])
@@ -390,16 +395,21 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
         encoded_dec_text_feat, encoded_dec_rel_feat = None, None
         if modelArgs['with_CLIP']:
             encoded_dec_text_feat, encoded_dec_rel_feat = data['decoder']['text_feats'].cuda(), data['decoder']['rel_feats'].cuda()
-        dec_sdfs = None
+        dec_sdfs, obj_ids = None, None
         if modelArgs['with_SDF']:
             dec_sdfs = data['decoder']['sdfs']
+            sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
+            length = dec_objs.size(0)
+            zeros_tensor = torch.zeros_like(sdf_candidates[0])
+            mask = torch.ne(sdf_candidates, zeros_tensor)
+            obj_ids = torch.unique(torch.where(mask)[0])
 
         all_pred_boxes = []
         all_pred_angles = []
 
         with torch.no_grad():
 
-            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
+            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, obj_ids, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'],data_dict['translations']),dim=-1), data_dict['angles']
             shapes_pred = data_dict['shapes'] if gen_shape else None
@@ -437,7 +447,7 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
             boxes_diversity_sample, shapes_sample, angle_diversity_sample, diversity_retrieval_ids_sample = [], [], [], []
             for sample in range(num_samples):
                 # reseed(int(time.time()))
-                diversity_boxes, diversity_points = model.sample_box_and_shape(point_classes_idx, dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                diversity_boxes, diversity_points = model.sample_box_and_shape(point_classes_idx, dec_objs, dec_triples, obj_ids, encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                                attributes=None, gen_shape=True)
                 if model.type_ == 'cs++':
                     from model.diff_utils.util_3d import sdf_to_mesh
