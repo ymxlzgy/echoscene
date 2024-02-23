@@ -380,8 +380,8 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
         #     continue
         # if data['scan_id'][0] not in ['MasterBedroom-58086','MasterBedroom-109561','Bedroom-11202', 'DiningRoom-2432', 'DiningRoom-451', 'DiningRoom-20718', 'LivingRoom-2050', 'LivingRoom-3540', 'LivingRoom-29294']:
             # continue
-        if data['scan_id'][0] != 'SecondBedroom-19119': # problematic room
-            continue
+        # if data['scan_id'][0] != 'SecondBedroom-19119': # problematic room
+        #     continue
 
         try:
             dec_objs, dec_triples = data['decoder']['objs'], data['decoder']['tripltes']
