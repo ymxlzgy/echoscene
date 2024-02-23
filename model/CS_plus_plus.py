@@ -670,7 +670,7 @@ class Sg2ScDiffModel(nn.Module):
                 uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
                 c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
                 c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
-                shape_diff_dict = {'obj_cat': dec_objs, 'triplet': dec_triplets, 'c_s': c_rel_feat_s, 'uc_s': uc_rel_feat_s}
+                shape_diff_dict = {'obj_cat': dec_objs, 'triples': dec_triplets, 'c_s': c_rel_feat_s, 'uc_s': uc_rel_feat_s}
                 gen_sdf = self.ShapeDiff.rel2shape(shape_diff_dict)
 
             return {'shapes': gen_sdf}, gen_box_dict
@@ -715,7 +715,7 @@ class Sg2ScDiffModel(nn.Module):
                 uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
                 c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
                 c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
-                shape_diff_dict = {'obj_cat': dec_objs, 'triplet': dec_triplets, 'c_s': c_rel_feat_s,
+                shape_diff_dict = {'obj_cat': dec_objs, 'triples': dec_triplets, 'c_s': c_rel_feat_s,
                                    'uc_s': uc_rel_feat_s}
                 gen_sdf = self.ShapeDiff.rel2shape(shape_diff_dict, uc_scale=3.)
         keep = []
