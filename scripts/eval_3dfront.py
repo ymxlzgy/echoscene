@@ -90,10 +90,10 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
     all_diversity_boxes = []
     all_diversity_angles = []
     all_diversity_chamfer = []
-    bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
-    with open(bbox_file, "r") as read_file:
-        box_data = json.load(read_file)
-        box_data['chair'].update(box_data['stool'])
+    # bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
+    # with open(bbox_file, "r") as read_file:
+    #     box_data = json.load(read_file)
+    #     box_data['chair'].update(box_data['stool'])
 
     for i, data in enumerate(test_dataloader_changes, 0):
         try:
