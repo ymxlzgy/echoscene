@@ -90,10 +90,10 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
     all_diversity_boxes = []
     all_diversity_angles = []
     all_diversity_chamfer = []
-    bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
-    with open(bbox_file, "r") as read_file:
-        box_data = json.load(read_file)
-        box_data['chair'].update(box_data['stool'])
+    # bbox_file = "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_trainval.json" if datasize == 'large' else "/media/ymxlzgy/Data/Dataset/FRONT/cat_jid_all_small.json"
+    # with open(bbox_file, "r") as read_file:
+    #     box_data = json.load(read_file)
+    #     box_data['chair'].update(box_data['stool'])
 
     for i, data in enumerate(test_dataloader_changes, 0):
         try:
@@ -136,12 +136,12 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
                 manipulated_nodes = manipulated_subs + manipulated_objs
                 keep, data_dict = model.sample_boxes_and_shape_with_changes(enc_objs, enc_triples, encoded_enc_text_feat,
                                                                             encoded_enc_rel_feat, dec_objs, dec_triples,
-                                                                            dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                            encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                             manipulated_nodes, gen_shape=gen_shape)
             else:
                 keep, data_dict = model.sample_boxes_and_shape_with_additions(enc_objs, enc_triples, encoded_enc_text_feat,
                                                                               encoded_enc_rel_feat, dec_objs, dec_triples,
-                                                                              dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                                                                              encoded_dec_text_feat, encoded_dec_rel_feat,
                                                                               missing_nodes, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'], data_dict['translations']), dim=-1), data_dict['angles']
@@ -390,16 +390,21 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
         encoded_dec_text_feat, encoded_dec_rel_feat = None, None
         if modelArgs['with_CLIP']:
             encoded_dec_text_feat, encoded_dec_rel_feat = data['decoder']['text_feats'].cuda(), data['decoder']['rel_feats'].cuda()
-        dec_sdfs = None
-        if modelArgs['with_SDF']:
-            dec_sdfs = data['decoder']['sdfs']
+        # dec_sdfs, obj_ids = None, None
+        # if modelArgs['with_SDF']:
+        #     dec_sdfs = data['decoder']['sdfs']
+        #     sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
+        #     length = dec_objs.size(0)
+        #     zeros_tensor = torch.zeros_like(sdf_candidates[0])
+        #     mask = torch.ne(sdf_candidates, zeros_tensor)
+        #     obj_ids = torch.unique(torch.where(mask)[0])
 
         all_pred_boxes = []
         all_pred_angles = []
 
         with torch.no_grad():
 
-            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
+            data_dict = model.sample_box_and_shape(dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=gen_shape)
 
             boxes_pred, angles_pred = torch.concat((data_dict['sizes'],data_dict['translations']),dim=-1), data_dict['angles']
             shapes_pred = None
