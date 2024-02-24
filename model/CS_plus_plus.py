@@ -586,7 +586,7 @@ class Sg2ScDiffModel(nn.Module):
     #     keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
     #     return mu, logvar, dec_man_enc_pred, keep
 
-    def sample(self, dec_objs, dec_triplets, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=False):
+    def sample(self, dec_objs, dec_triplets, obj_ids, encoded_dec_text_feat, encoded_dec_rel_feat, gen_shape=False):
         with torch.no_grad():
             obj_embed, pred_embed, latent_obj_vecs, latent_pred_vecs = self.init_encoder(dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat)
             change_repr = []
@@ -611,12 +611,7 @@ class Sg2ScDiffModel(nn.Module):
                 uc_rel_feat_s = torch.unsqueeze(uc_rel_feat_s, dim=1)
                 c_rel_feat_s = self.rel_s_mlp(c_rel_feat_s)
                 c_rel_feat_s = torch.unsqueeze(c_rel_feat_s, dim=1)
-                sdf_candidates = dec_sdfs  # just use it to filter out floor and _scene_ (if have)
-                length = dec_objs.size(0)
-                zeros_tensor = torch.zeros_like(sdf_candidates[0])
-                mask = torch.ne(sdf_candidates, zeros_tensor)
-                ids = torch.unique(torch.where(mask)[0])
-                shape_diff_dict = {'obj_cat': dec_objs[ids], 'c_s': c_rel_feat_s[ids], 'uc_s': uc_rel_feat_s[ids]}
+                shape_diff_dict = {'obj_cat': dec_objs[obj_ids], 'c_s': c_rel_feat_s[obj_ids], 'uc_s': uc_rel_feat_s[obj_ids]}
                 gen_sdf = self.ShapeDiff.rel2shape(shape_diff_dict, uc_scale=3.)
 
             return {'shapes': gen_sdf}, gen_box_dict

@@ -689,6 +689,8 @@ def evaluate():
     # instantiate the model
     diff_opt = modelArgs['diff_yaml']
     diff_cfg = OmegaConf.load(diff_opt)
+    diff_cfg.layout_branch.diffusion_kwargs.train_stats_file = test_dataset_no_changes.box_normalized_stats
+    diff_cfg.layout_branch.denoiser_kwargs.using_clip = modelArgs['with_CLIP']
     model = SGDiff(type=modeltype_, diff_opt=diff_cfg, vocab=test_dataset_no_changes.vocab, replace_latent=replacelatent_,
                 with_changes=with_changes_, residual=modelArgs['residual'], gconv_pooling=modelArgs['pooling'], clip=modelArgs['with_CLIP'],
                 with_angles=modelArgs['with_angles'], separated=modelArgs['separated'])
