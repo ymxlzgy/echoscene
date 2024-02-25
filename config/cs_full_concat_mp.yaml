@@ -1,5 +1,5 @@
 hyper:
-    batch_size: 8
+    batch_size: 64
     gpu_ids: 0
     logs_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
     results_dir: /media/ymxlzgy/Data/model_savedir/CS++/diff_crossattn
@@ -30,12 +30,13 @@ layout_branch:
         attention_resolutions: [ 4, 2 ]
         num_heads: 8
         # cond_model params
-        use_spatial_transformer: true
+        use_spatial_transformer: false
         transformer_depth: 1
-        conditioning_key: 'crossattn'
+        conditioning_key: 'concat'
         concat_dim: 1280
         crossattn_dim: 1280
         use_checkpoint: true
+        enable_t_emb: false
 
     diffusion_kwargs:
       schedule_type: 'linear'
