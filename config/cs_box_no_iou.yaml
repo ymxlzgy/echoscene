@@ -1,8 +1,8 @@
 hyper:
     batch_size: 128
     gpu_ids: 0
-    logs_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
-    results_dir: /media/student/Data/guangyao/cs2_models/diff_crossattn
+    logs_dir: ../cs2_box/diff_crossattn
+    results_dir: ../cs2_box/diff_crossattn
     name: ./
     isTrain: True
     device: 'cuda'

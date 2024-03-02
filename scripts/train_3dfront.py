@@ -17,6 +17,7 @@ from model.SGDiff import SGDiff
 from model.discriminators import BoxDiscriminator, ShapeAuxillary
 from model.losses import bce_loss
 from helpers.util import bool_flag, _CustomDataParallel
+from helpers.interrupt_handler import InterruptHandler
 
 from model.losses import calculate_model_losses
 
@@ -233,88 +234,96 @@ def train():
     print("---- Starting training loop! ----")
     iter_start_time = time.time()
     start_epoch = model.epoch if model.epoch else 0
-    for epoch in range(start_epoch, args.nepoch):
-        print('Epoch: {}/{}'.format(epoch, args.nepoch))
-        for i, data in enumerate(tqdm(dataloader)):
+    with InterruptHandler() as h:
+        for epoch in range(start_epoch, args.nepoch):
+            print('Epoch: {}/{}'.format(epoch, args.nepoch))
+            for i, data in enumerate(tqdm(dataloader)):
 
-            # parse the data to the network
-            try:
-                enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
-                enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs,\
-                encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_triples = parse_data(data)
-            except Exception as e:
-                print('Exception', str(e))
-                continue
+                # parse the data to the network
+                try:
+                    enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
+                    enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs,\
+                    encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_triples = parse_data(data)
+                except Exception as e:
+                    print('Exception', str(e))
+                    continue
 
-            if args.bin_angle:
-                # limit the angle bin range from 0 to 24
-                dec_angles = torch.where(dec_angles > 0, dec_angles, torch.zeros_like(dec_angles))
-                dec_angles = torch.where(dec_angles < 24, dec_angles, torch.zeros_like(dec_angles))
+                if args.bin_angle:
+                    # limit the angle bin range from 0 to 24
+                    dec_angles = torch.where(dec_angles > 0, dec_angles, torch.zeros_like(dec_angles))
+                    dec_angles = torch.where(dec_angles < 24, dec_angles, torch.zeros_like(dec_angles))
 
-            model.diff.optimizerFULL.zero_grad()
+                model.diff.optimizerFULL.zero_grad()
 
-            model = model.train()
+                model = model.train()
 
-            obj_selected, shape_loss, layout_loss, loss_dict = model.forward_mani(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
-                                           dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
-                                           dec_objs_to_scene, missing_nodes, manipulated_triples)
+                obj_selected, shape_loss, layout_loss, loss_dict = model.forward_mani(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+                                               dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
+                                               dec_objs_to_scene, missing_nodes, manipulated_triples)
 
-            if args.network_type == 'cs++':
-                model.diff.ShapeDiff.update_loss()
-
-            loss = shape_loss + layout_loss
-
-            # optimize
-            loss.backward()
-
-            # Cap the occasional super mutant gradient spikes
-            # Do now a gradient step and plot the losses
-            if args.network_type == 'cs++':
-                torch.nn.utils.clip_grad_norm_(model.diff.ShapeDiff.df_module.parameters(), 5.0)
-            for group in model.diff.optimizerFULL.param_groups:
-                for p in group['params']:
-                    if p.grad is not None and p.requires_grad and torch.isnan(p.grad).any():
-                        print('NaN grad in step {}.'.format(counter))
-                        p.grad[torch.isnan(p.grad)] = 0
-
-            model.diff.optimizerFULL.step()
-
-            counter += 1
-
-            current_lr = model.diff.update_learning_rate()
-            writer.add_scalar("learning_rate", current_lr, counter)
-
-            if counter % 50 == 0:
-                message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.6f}".format( counter, layout_loss, shape_loss, current_lr)
                 if args.network_type == 'cs++':
-                    loss_diff = model.diff.ShapeDiff.get_current_errors()
-                    for k, v in loss_diff.items():
-                        message += ' %s: %.6f ' % (k, v)
-                print(message)
+                    model.diff.ShapeDiff.update_loss()
 
-            writer.add_scalar('Loss_BBox', layout_loss, counter)
-            writer.add_scalar('Loss_Translation', loss_dict['loss.trans'], counter)
-            writer.add_scalar('Loss_Size', loss_dict['loss.size'], counter)
-            writer.add_scalar('Loss_Angle', loss_dict['loss.angle'], counter)
-            writer.add_scalar('Loss_IoU', loss_dict['loss.liou'], counter)
-            writer.add_scalar('Loss_Shape', shape_loss, counter)
+                loss = shape_loss + layout_loss
 
-            # t = (time.time() - iter_start_time) / args.batchSize
-            # loss_diff = model.diff.ShapeDiff.get_current_errors()
-            # model.diff.visualizer.print_current_errors(writer, counter, loss_diff, t)
-            if counter % 10000 == 0 and obj_selected is not None:
-                obj_selected = obj_selected.detach().cpu().numpy()
-                obj_idx = np.where(dec_objs_to_scene==0)[0]
-                triplet_idx = np.where(dec_triples_to_scene==0)[0]
-                model.diff.ShapeDiff.gen_shape_after_foward_2(obj_idx,triplet_idx, num_obj=args.vis_num)
-                model.diff.visualizer.display_current_results(writer, model.diff.ShapeDiff.get_current_visuals(
-                    dataset.classes_r, obj_selected, num_obj=args.vis_num), counter, phase='train')
+                # optimize
+                loss.backward()
 
+                # Cap the occasional super mutant gradient spikes
+                # Do now a gradient step and plot the losses
+                if args.network_type == 'cs++':
+                    torch.nn.utils.clip_grad_norm_(model.diff.ShapeDiff.df_module.parameters(), 5.0)
+                for group in model.diff.optimizerFULL.param_groups:
+                    for p in group['params']:
+                        if p.grad is not None and p.requires_grad and torch.isnan(p.grad).any():
+                            print('NaN grad in step {}.'.format(counter))
+                            p.grad[torch.isnan(p.grad)] = 0
 
+                model.diff.optimizerFULL.step()
 
-        if epoch % 100 == 0:
-            model.save(args.exp, args.outf, epoch, counter=counter)
-            print('saved model_{}'.format(epoch))
+                counter += 1
+
+                current_lr = model.diff.update_learning_rate()
+                writer.add_scalar("learning_rate", current_lr, counter)
+
+                if counter % 50 == 0:
+                    message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.6f}".format( counter, layout_loss, shape_loss, current_lr)
+                    if args.network_type == 'cs++':
+                        loss_diff = model.diff.ShapeDiff.get_current_errors()
+                        for k, v in loss_diff.items():
+                            message += ' %s: %.6f ' % (k, v)
+                    print(message)
+
+                writer.add_scalar('Loss_BBox', layout_loss, counter)
+                writer.add_scalar('Loss_Translation', loss_dict['loss.trans'], counter)
+                writer.add_scalar('Loss_Size', loss_dict['loss.size'], counter)
+                writer.add_scalar('Loss_Angle', loss_dict['loss.angle'], counter)
+                writer.add_scalar('Loss_IoU', loss_dict['loss.liou'], counter)
+                writer.add_scalar('Loss_Shape', shape_loss, counter)
+
+                # t = (time.time() - iter_start_time) / args.batchSize
+                # loss_diff = model.diff.ShapeDiff.get_current_errors()
+                # model.diff.visualizer.print_current_errors(writer, counter, loss_diff, t)
+                if counter % 10000 == 0 and obj_selected is not None:
+                    obj_selected = obj_selected.detach().cpu().numpy()
+                    obj_idx = np.where(dec_objs_to_scene==0)[0]
+                    triplet_idx = np.where(dec_triples_to_scene==0)[0]
+                    model.diff.ShapeDiff.gen_shape_after_foward_2(obj_idx,triplet_idx, num_obj=args.vis_num)
+                    model.diff.visualizer.display_current_results(writer, model.diff.ShapeDiff.get_current_visuals(
+                        dataset.classes_r, obj_selected, num_obj=args.vis_num), counter, phase='train')
+
+                if h.interrupted:
+                    break
+
+            if h.interrupted:
+                break
+
+            if epoch % 100 == 0:
+                model.save(args.exp, args.outf, epoch, counter=counter)
+                print('saved model_{}'.format(epoch))
+
+        model.save(args.exp, args.outf, epoch, counter=counter)
+        print('saved model_{}'.format(epoch))
 
     writer.close()
 

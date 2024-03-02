@@ -1,14 +1,14 @@
 hyper:
     batch_size: 64
     gpu_ids: 0
-    logs_dir: /media/ymxlzgy/Data/model_savedir/CS++_mp/diff_crossattn
-    results_dir: /media/ymxlzgy/Data/model_savedir/CS++_mp/diff_crossattn
+    logs_dir: ../CS++_mp/diff_crossattn
+    results_dir: ../CS++_mp/diff_crossattn
     name: ./
     isTrain: True
     device: 'cuda'
     distributed: 0
     lr_init: 1e-4
-    lr_step: [35000, 70000, 120000]
+    lr_step: [35000, 70000, 140000]
     lr_evo: [5e-5, 1e-5, 5e-6]
 dataset:
     res: 64
@@ -36,7 +36,7 @@ layout_branch:
         concat_dim: 1280
         crossattn_dim: 1280
         use_checkpoint: true
-        enable_t_emb: false
+        enable_t_emb: true
 
     diffusion_kwargs:
       schedule_type: 'linear'

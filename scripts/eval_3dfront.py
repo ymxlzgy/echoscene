@@ -286,7 +286,7 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
         # compute relationship constraints accuracy through simple geometric rules
         # TODO boxes_pred_den with angle
         accuracy = validate_constrains_changes(dec_triples, boxes_pred_den, angles_pred, keep, model.vocab, accuracy)
-        accuracy_in_orig_graph = validate_constrains_changes(dec_triples, torch.stack(bp_box, dim=0).squeeze(1), torch.stack(bp_angle, dim=0).squeeze(1), keep, model.vocab, accuracy_in_orig_graph)
+        accuracy_in_orig_graph = validate_constrains_changes(enc_triples, torch.stack(bp_box, dim=0).squeeze(1), torch.stack(bp_angle, dim=0).squeeze(1), keep, model.vocab, accuracy_in_orig_graph)
         accuracy_unchanged = validate_constrains(dec_triples, boxes_pred_den, angles_pred, keep, model.vocab, accuracy_unchanged)
 
     # if with_diversity:
@@ -368,10 +368,10 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
         box_data['chair'].update(box_data['stool'])
 
     for i, data in enumerate(test_dataloader_no_changes, 0):
-        # print(data['scan_id'])
+        print(data['scan_id'])
         # if data['scan_id'][0] != 'LivingDiningRoom-19784':
         #     continue
-        # if data['scan_id'][0].split('-')[0] not in ['DiningRoom', "LivingDiningRoom"]:
+        # if data['scan_id'][0].split('-')[0] not in ['DiningRoom']:
         #     continue
         # if data['scan_id'][0] not in ['MasterBedroom-58086','MasterBedroom-109561','Bedroom-11202', 'DiningRoom-2432', 'DiningRoom-451', 'DiningRoom-20718', 'LivingRoom-2050', 'LivingRoom-3540', 'LivingRoom-29294']:
             # continue
@@ -703,11 +703,11 @@ def evaluate():
 
     print('\nEditing Mode - Additions')
     reseed(47)
-    # validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    validate_constrains_loop_w_changes(modelArgs, test_dataset_addition_changes, model, normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nEditing Mode - Relationship changes')
-    # validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
+    validate_constrains_loop_w_changes(modelArgs, test_dataset_rels_changes, model,  normalized_file=normalized_file, with_diversity=args.evaluate_diversity, bin_angles=modelArgs['bin_angle'], num_samples=args.num_samples, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small', gen_shape=args.gen_shape)
 
     reseed(47)
     print('\nGeneration Mode')

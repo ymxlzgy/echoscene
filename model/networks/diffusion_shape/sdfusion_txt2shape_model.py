@@ -234,6 +234,7 @@ class SDFusionText2ShapeModel(BaseModel):
         if self.df.conditioning_key == 'concat':
             self.rel = self.rel.view(B,-1,16,16,16)
         try:
+            self.scene_ids = input['scene_ids']
             self.x = input['sdf']
             vars_list = ['x']
             self.tocuda(var_names=vars_list)
@@ -348,6 +349,12 @@ class SDFusionText2ShapeModel(BaseModel):
             z = self.vqvae(self.x, forward_no_quant=True, encode_only=True)
 
         # 2. do diffusion's forward
+        # if True:
+        #     unique_scenes, inv_idx = np.unique(self.scene_ids, return_inverse=True)
+        #     t = torch.randint(0, self.num_timesteps, size=(len(unique_scenes),),
+        #                       device=self.device)  # we want to have different t for each scene not each obj
+        #     t = torch.gather(t, 0, torch.tensor(inv_idx, device=self.device))
+        # else:
         t = torch.randint(0, self.num_timesteps, (z.shape[0],), device=self.device).long()
         z_noisy, target, loss, loss_dict = self.p_losses(z, obj_embed, triples, c_rel, t)
 

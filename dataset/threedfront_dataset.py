@@ -597,7 +597,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
          '0: none'''
         # subset of edge labels that are spatially interpretable (evaluatable via geometric contraints)
         interpretable_rels = [1, 2, 3, 4, 8, 9, 10, 11]
-        rel_dict = {1: 'left', 2: 'right', 3: 'front', 4: 'behind', 8: 'bigger than', 9: 'smaller than', 10: 'taller than', 11: 'shorter than'}
+        rel_dict = {1: 'left', 2: 'right', 3: 'front', 4: 'behind', 5: 'close by', 8: 'bigger than', 9: 'smaller than', 10: 'taller than', 11: 'shorter than', 12: 'symmetrical to'}
         did_change = False
         trials = 0
         excluded = [self.classes['floor']]

@@ -191,13 +191,13 @@ class SGDiff(nn.Module):
     def sample_boxes_and_shape_with_additions(self, enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
                                             dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes, gen_shape=False):
         if self.type_ == 'cs++_l':
-            layout_dict = self.diff.sampleBoxes_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+            keep, layout_dict = self.diff.sampleBoxes_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
                                                              dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes)
             return layout_dict
         elif self.type_ == 'cs++':
-            shape_dict, layout_dict = self.diff.sample_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
+            keep, shape_dict, layout_dict = self.diff.sample_with_additions(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
                                                                     dec_objs, dec_triples, encoded_dec_text_feat, encoded_dec_rel_feat, missing_nodes, gen_shape=gen_shape)
-            return {**shape_dict, **layout_dict}
+            return keep, {**shape_dict, **layout_dict}
         else:
             raise NotImplementedError
 

@@ -62,7 +62,7 @@ def main(argv):
     room_type = ["bedroom", "livingroom", "diningroom", "all"]
     room = room_type[0]
     print("testing {}...".format(room))
-    room_dict = {'bedroom': ["Bedroom", "MasterBedroom", "SecondBedroom"], 'livingroom': ['LivingDiningRoom','LivingRoom'], 'diningroom': ['LivingDiningRoom','DiningRoom']}
+    room_dict = {'bedroom': ["Bedroom", "MasterBedroom", "SecondBedroom"], 'livingroom': ['LivingDiningRoom','LivingRoom'], 'diningroom': ['LivingDiningRoom','DiningRoom'], 'all': ["Bedroom", "MasterBedroom", "SecondBedroom",'LivingDiningRoom','LivingRoom','DiningRoom']}
     # Create Real datasets
     # config = dict(
     #     train_stats="dataset_stats.txt",
@@ -79,7 +79,7 @@ def main(argv):
         # ))
     else:
         args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/sdf_fov90_h8_wo_lamp_no_stool/small/test"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/CS_box_new_new_hybrid/vis/1900/txt2shape/render_imgs"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/CS_A40_mpt/vis/1200/render_imgs/cs++_mp"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,

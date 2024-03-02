@@ -16,6 +16,8 @@ from model.diff_utils.util import tensor2im
 from model.diff_utils.util_3d import render_sdf, render_meshes, sdf_to_mesh
 from PIL import Image
 
+os.environ['PYOPENGL_PLATFORM'] = 'egl'
+
 def tnsrs2ims(tensors):
     ims = []
     for tensor in tensors:
