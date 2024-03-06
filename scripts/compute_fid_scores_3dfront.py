@@ -60,7 +60,8 @@ def main(argv):
 
     args = parser.parse_args(argv)
     room_type = ["bedroom", "livingroom", "diningroom", "all"]
-    room = room_type[0]
+    instruct_scene = True
+    room = room_type[2]
     print("testing {}...".format(room))
     room_dict = {'bedroom': ["Bedroom", "MasterBedroom", "SecondBedroom"], 'livingroom': ['LivingDiningRoom','LivingRoom'], 'diningroom': ['LivingDiningRoom','DiningRoom'], 'all': ["Bedroom", "MasterBedroom", "SecondBedroom",'LivingDiningRoom','LivingRoom','DiningRoom']}
     # Create Real datasets
@@ -71,15 +72,15 @@ def main(argv):
     # splits_builder = CSVSplitsBuilder(args.path_to_annotations)
     if args.compare_trainval:
         args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/gt/small/trainval"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/graphto3d_v2_trainval/g2bv1_small/retrieval/render_imgs"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/sln_small/retrieval/render_imgs"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,
         #     scene_ids=splits_builder.get_splits(["train", "val"])
         # ))
     else:
-        args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/sdf_fov90_h8_wo_lamp_no_stool/small/test"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/CS_A40_mpt/vis/1200/render_imgs/cs++_mp"
+        args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/gt_fov90_h8_wo_lamp_no_stool/small/test"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/Instructscene/epoch_00259"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,
@@ -106,11 +107,18 @@ def main(argv):
     if not os.path.exists(path_to_test_fake):
         os.makedirs(path_to_test_fake)
 
-    synthesized_images = [
-        os.path.join(args.path_to_synthesized_renderings, oi)
-        for oi in os.listdir(args.path_to_synthesized_renderings)
-        if oi.endswith(".png") and oi.split('-')[0] in room_dict[room]
-    ]
+    if not instruct_scene:
+        synthesized_images = [
+            os.path.join(args.path_to_synthesized_renderings, oi)
+            for oi in os.listdir(args.path_to_synthesized_renderings)
+            if oi.endswith(".png") and oi.split('-')[0] in room_dict[room]
+        ]
+    else:
+        synthesized_images = [
+            os.path.join(args.path_to_synthesized_renderings, oi)
+            for oi in os.listdir(args.path_to_synthesized_renderings)
+            if oi.endswith(".png") and oi.split('_')[1].split('-')[0] in room_dict[room]
+        ]
     print('number of synthesized images :', len(synthesized_images))
 
     scores = []

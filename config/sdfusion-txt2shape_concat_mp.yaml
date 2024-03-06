@@ -38,4 +38,4 @@ unet:
     legacy: False
 
     messsage_passing: True
-    enable_t_emb: False
+    enable_t_emb: true
