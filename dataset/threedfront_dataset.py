@@ -126,7 +126,7 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             if not os.path.exists(self.root_3dfront):
                 os.makedirs(self.root_3dfront)
 
-        self.mapping_full2simple = json.load(open(os.path.join(self.root, "mapping_stool.json"), "r"))
+        self.mapping_full2simple = json.load(open(os.path.join(self.root, "mapping.json"), "r"))
 
         with open(self.catfile, 'r') as f:
             for line in f:

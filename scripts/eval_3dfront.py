@@ -428,7 +428,7 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
             print("rendering", [classes[i].strip('\n') for i in dec_objs])
             if model.type_ == 'cs++_l':
                 render_box(data['scan_id'], dec_objs.detach().cpu().numpy(), boxes_pred_den, angles_pred, datasize=datasize,
-                classes=classes, render_type=args.render_type, store_img=True, render_boxes=False, visual=True, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
+                classes=classes, render_type=args.render_type, store_img=True, render_boxes=False, visual=False, demo=False, without_lamp=True, store_path=modelArgs['store_path'])
             elif model.type_ == 'cs++':
                 if shapes_pred is not None:
                     shapes_pred = shapes_pred.cpu().detach()

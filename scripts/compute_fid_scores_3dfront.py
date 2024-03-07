@@ -78,8 +78,8 @@ def main(argv):
         #     scene_ids=splits_builder.get_splits(["train", "val"])
         # ))
     else:
-        args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/sdf_fov90_h8_wo_lamp_no_stool/small/test"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/CS_box_new_new_hybrid/vis/1900/txt2shape/render_imgs"
+        args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/gt_fov90_h8_wo_lamp_no_stool/small/test"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/Instructscene/epoch_00179"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,
