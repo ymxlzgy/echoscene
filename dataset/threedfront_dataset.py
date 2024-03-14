@@ -8,17 +8,15 @@ import os.path
 import torch
 import numpy as np
 import copy
-from tqdm import tqdm
 import json
 from helpers.psutil import FreeMemLinux
 from helpers.util import scale_box_params, standardize_box_params
-from omegaconf import OmegaConf
 import clip
 import random
 import pickle
-import trimesh
 import h5py
-import open3d as o3d
+from tqdm import tqdm
+
 
 changed_relationships_dict = {
         'left': 'right',
@@ -49,13 +47,12 @@ def load_ckpt(ckpt):
 class ThreedFrontDatasetSceneGraph(data.Dataset):
     def __init__(self, root, root_3dfront='', split='train', shuffle_objs=False, pass_scan_id=False, use_SDF=False,
                  use_scene_rels=False, data_len=None, with_changes=True, scale_func='diag', eval=False,
-                 eval_type='addition', with_feats=False, with_CLIP=False, bin_angle=False,
+                 eval_type='addition', with_CLIP=False, bin_angle=False,
                  seed=True, large=False, recompute_feats=False, recompute_clip=False,
                  room_type='bedroom'):
 
         self.room_type = room_type
         self.seed = seed
-        self.with_feats = with_feats
         self.with_CLIP = with_CLIP
         self.cond_model = None
         self.large = large
@@ -165,12 +162,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         self.sorted_cat_list = sorted(self.cat)
         self.files = {}
         self.eval_type = eval_type
-        # check if all shape features exist. If not they get generated here (once)
-        if with_feats:
-            print('Assume you downloaded the DeepSDF codes and SDFs. If not, please download in README.md')
-            # for index in tqdm(range(len(self))):
-            #     self.__getitem__(index)
-            self.recompute_feats = False
 
         # check if all clip features exist. If not they get generated here (once)
         if self.with_CLIP:
@@ -446,9 +437,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                     clip_feats_rel_new.append(clip_feats_rel[word])
                 output['encoder']['rel_feats'] = clip_feats_rel_new
 
-        if self.with_feats:
-            output['encoder']['feats'] = feats_in
-
         output['manipulate'] = {}
         if not self.with_changes:
             output['manipulate']['type'] = 'none'
@@ -507,8 +495,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         if self.with_CLIP:
             output['encoder']['text_feats'] = torch.from_numpy(np.array(output['encoder']['text_feats'], dtype=np.float32)) # this is changed
             output['encoder']['rel_feats'] = torch.from_numpy(np.array(output['encoder']['rel_feats'], dtype=np.float32))
-        if self.with_feats:
-            output['encoder']['feats'] = torch.from_numpy(np.array(output['encoder']['feats'], dtype=np.float32))
 
         # these two should have the same amount.
         output['decoder']['objs'] = torch.from_numpy(np.array(output['decoder']['objs'], dtype=np.int64))
@@ -519,8 +505,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
         if self.with_CLIP:
             output['decoder']['text_feats'] = torch.from_numpy(np.array(output['decoder']['text_feats'], dtype=np.float32))
             output['decoder']['rel_feats'] = torch.from_numpy(np.array(output['decoder']['rel_feats'], dtype=np.float32)) # this is changed
-        if self.with_feats:
-            output['decoder']['feats'] = torch.from_numpy(np.array(output['decoder']['feats'], dtype=np.float32))
         if self.use_SDF:
             output['decoder']['sdfs'] = torch.stack(obj_sdf_list,dim=0)
 
@@ -550,8 +534,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             node_id = np.random.randint(len(graph['objs']) - 1)
 
         node_removed = graph['objs'].pop(node_id)
-        if self.with_feats:
-            graph['feats'].pop(node_id)
         node_clip_removed = None
         if self.with_CLIP:
             node_clip_removed = graph['text_feats'].pop(node_id)
@@ -697,7 +679,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             all_obj_to_scene, all_triple_to_scene = [], []
             all_points = []
             all_sdfs = []
-            all_feats = []
             all_text_feats = []
             all_rel_feats = []
 
@@ -769,9 +750,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 all_points = torch.cat(all_points)
                 outputs['points'] = all_points
 
-            if len(all_feats) > 0:
-                all_feats = torch.cat(all_feats)
-                outputs['feats'] = all_feats
             if len(all_text_feats) > 0:
                 all_text_feats = torch.cat(all_text_feats)
                 outputs['text_feats'] = all_text_feats
@@ -791,7 +769,6 @@ if __name__ == "__main__":
         use_SDF=False,
         use_scene_rels=True,
         with_changes=True,
-        with_feats=False,
         with_CLIP=True,
         large=False,
         seed=False,

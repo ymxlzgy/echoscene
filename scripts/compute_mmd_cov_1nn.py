@@ -352,22 +352,13 @@ def _jsdiv(P, Q):
 def visual_pc(pc):
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(pc)
-
-    # 创建一个可视化窗口
     vis = o3d.visualization.Visualizer()
     vis.create_window()
-
-    # 添加点云
     vis.add_geometry(point_cloud)
-
-    # 添加坐标轴
     vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0]))
-
-    # 开始渲染
     vis.run()
-
-    # 销毁窗口
     vis.destroy_window()
+
 def sample_pc(pc, number=5000, transform=False, visual=False):
     if transform:
         rotation_matrix = np.array([[0, 0, 1],
@@ -419,43 +410,21 @@ if __name__ == "__main__":
     import copy
     import trimesh
     os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-    v1_path = "/media/storage/guangyao/g2s_test/g2sv1_small_no_stool_backup/object_meshes/v1" # Graph-to-3D results
-    v1_pc_list = []
-    v2_path = "/media/storage/guangyao/g2s_test/g2sv2_180_crossattn_small_no_stool_original/object_meshes/v2" # CommonScenes results
-    v2_pc_list = []
-    gt_path = "/media/storage/guangyao/g2s_test/gt_fov90_h8_obj_meshes/test/small" # ground truth results
+    echoscene_path = "/path/to/echoscene" # EchoScene results
+    echoscene_pc_list = []
+    gt_path = "/path/to/gt" # ground truth results
     gt_pc_list = []
     categories = ['bed', 'nightstand', 'wardrobe', 'chair', 'table', 'cabinet', 'lamp', 'shelf', 'sofa', 'tv']
     # cat = categories[0]
     for cat_id in range(3, len(categories)):
         print(f"Testing {categories[cat_id]}...")
 
-        v1_pcs = collect_pcs(v1_path, categories[cat_id], number=5000, transform=True, visual=False)
-        v1_pcs = v1_pcs[:116]
-        print(f'loaded {v1_pcs.size(0)} {categories[cat_id]} from v1')
-
-        v2_pcs = collect_pcs(v2_path, categories[cat_id], number=5000, transform=False, visual=False)
-        v2_pcs = v2_pcs[:116]
-        print(f'loaded {v1_pcs.size(0)} {categories[cat_id]} from v2')
+        echoscene_pcs = collect_pcs(echoscene_path, categories[cat_id], number=5000, transform=False, visual=False)
+        print(f'loaded {echoscene_pcs.size(0)} {categories[cat_id]} from echoscene')
 
         gt_pcs = collect_pcs(gt_path, categories[cat_id], number=5000, transform=False, visual=False)
-        gt_pcs = gt_pcs[:116]
-        print(f'loaded {v1_pcs.size(0)} {categories[cat_id]} from gt')
+        print(f'loaded {gt_pcs.size(0)} {categories[cat_id]} from gt')
 
-        v1_results = compute_all_metrics(v1_pcs.cuda(), gt_pcs.cuda(), batch_size=50, accelerated_cd=True)
-        print(f"v1-{categories[cat_id]}:",v1_results)
-        v2_results = compute_all_metrics(v2_pcs.cuda(), gt_pcs.cuda(), batch_size=50, accelerated_cd=True)
-        print(f"v2-{categories[cat_id]}:",v2_results)
+        echoscene_results = compute_all_metrics(echoscene_pcs.cuda(), gt_pcs.cuda(), batch_size=50, accelerated_cd=True)
+        print(f"v2-{categories[cat_id]}:",echoscene_results)
         torch.cuda.empty_cache()
-    # B, N = 2, 10
-    # x = torch.rand(B, N, 3)
-    # y = torch.rand(B, N, 3)
-    #
-    # # distChamfer = distChamferCUDA()
-    # min_l, min_r = distChamferCUDA(x.cuda(), y.cuda())
-    # print(min_l.shape)
-    # print(min_r.shape)
-    #
-    # l_dist = min_l.mean().cpu().detach().item()
-    # r_dist = min_r.mean().cpu().detach().item()
-    # print(l_dist, r_dist)

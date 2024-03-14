@@ -11,7 +11,7 @@ from tqdm.auto import tqdm
 import json
 import torch.nn.functional as F
 from einops import rearrange, reduce
-from helpers.util import batch_torch_denormalize_box_params, denormalize_box_params
+from helpers.util import preprocess_angle2sincos,descale_box_params,postprocess_sincos2arctan
 from helpers.threedfront_box3d import bbox_overlaps_3d, axis_aligned_bbox_overlaps_3d
 
 def norm(v, f):
@@ -217,9 +217,9 @@ class GaussianDiffusion:
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
 
-    def p_mean_variance(self, denoise_fn, data, t, condition, condition_cross, clip_denoised: bool, return_pred_xstart: bool):
+    def p_mean_variance(self, denoise_fn, data, t, obj_embed, triples, condition, clip_denoised: bool, return_pred_xstart: bool):
 
-        model_output = denoise_fn(data, t, condition, condition_cross)
+        model_output = denoise_fn(data, obj_embed, triples, t, condition)
 
 
         if self.model_var_type in ['fixedsmall', 'fixedlarge']:
@@ -293,6 +293,21 @@ class GaussianDiffusion:
         assert sample.shape == pred_xstart.shape
         return (sample, pred_xstart) if return_pred_xstart else sample
 
+    def p_sample_sg(self, denoise_fn, data, t, obj_embed, triples, condition, noise_fn, clip_denoised=False, return_pred_xstart=False):
+        """
+        Sample from the model
+        """
+        model_mean, _, model_log_variance, pred_xstart = self.p_mean_variance(denoise_fn, data=data, t=t, obj_embed=obj_embed, triples=triples, condition=condition, clip_denoised=clip_denoised,
+                                                                 return_pred_xstart=True)
+        noise = noise_fn(size=data.shape, dtype=data.dtype, device=data.device)
+        assert noise.shape == data.shape
+        # no noise when t == 0
+        nonzero_mask = torch.reshape(1 - (t == 0).float(), [data.shape[0]] + [1] * (len(data.shape) - 1))
+
+        sample = model_mean + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
+        assert sample.shape == pred_xstart.shape
+        return (sample, pred_xstart) if return_pred_xstart else sample
+
 
     def p_sample_loop(self, denoise_fn, shape, device, condition, condition_cross,
                       noise_fn=torch.randn, clip_denoised=True, keep_running=False):
@@ -311,6 +326,23 @@ class GaussianDiffusion:
 
         assert img_t.shape == shape
         return img_t
+
+    def p_sample_loop_sg(self, denoise_fn, shape, device, obj_embed, triples, condition, noise_fn=torch.randn, clip_denoised=True, keep_running=False):
+        """
+        Generate samples
+        keep_running: True if we run 2 x num_timesteps, False if we just run num_timesteps
+
+        """
+
+        assert isinstance(shape, (tuple, list))
+        x_t = noise_fn(size=shape, dtype=torch.float, device=device)
+        for t in tqdm(reversed(range(0, self.num_timesteps if not keep_running else len(self.betas)))):
+            t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(t)
+            x_t = self.p_sample_sg(denoise_fn=denoise_fn, data=x_t, t=t_, obj_embed=obj_embed, triples=triples, condition=condition, noise_fn=noise_fn,
+                                  clip_denoised=clip_denoised, return_pred_xstart=False)
+
+        assert x_t.shape == shape
+        return x_t
 
     def p_sample_loop_trajectory(self, denoise_fn, shape, device, freq, condition, condition_cross,
                                  noise_fn=torch.randn,clip_denoised=True, keep_running=False):
@@ -340,8 +372,6 @@ class GaussianDiffusion:
         return imgs
 
 
-    '''losses'''
-
     def _vb_terms_bpd(self, denoise_fn, data_start, data_t, t, condition, condition_cross, clip_denoised: bool, return_pred_xstart: bool):
         true_mean, _, true_log_variance_clipped = self.q_posterior_mean_variance(x_start=data_start, x_t=data_t, t=t)
         model_mean, _, model_log_variance, pred_xstart = self.p_mean_variance(
@@ -350,6 +380,50 @@ class GaussianDiffusion:
         kl = kl.mean(dim=list(range(1, len(data_start.shape)))) / np.log(2.)
 
         return (kl, pred_xstart) if return_pred_xstart else kl
+
+    def IoU_loss(self, data_t,  timestep=None, pred_data=None, scene_ids=None):
+        # get x_recon & valid mask
+        if self.model_mean_type == 'eps':
+            self.x_recon = self._predict_xstart_from_eps(data_t, timestep, eps=pred_data)
+        else:
+            self.x_recon = pred_data
+
+        # descale bounding box to world coordinate system
+        descale_bbox = descale_box_params(self.x_recon, file=self.bbox_norm_file, angle=False)
+        angle = postprocess_sincos2arctan(self.x_recon[:,-2:])
+        descale_bbox = torch.concat((descale_bbox[:,:-2],angle),dim=-1)
+        if self.iou_type == 'aabb':
+            # get the aabb bbox corners
+            axis_aligned_bbox_corn = torch.cat(
+                [descale_bbox[:, 3:6] - descale_bbox[:3] / 2, descale_bbox[:, 3:6] + descale_bbox[:3] / 2],
+                dim=-1)
+            assert axis_aligned_bbox_corn.shape[-1] == 6
+            # TODO implement this
+            bbox_iou = axis_aligned_bbox_overlaps_3d(axis_aligned_bbox_corn, axis_aligned_bbox_corn)
+        elif self.iou_type == 'obb':
+            bbox_iou = bbox_overlaps_3d(descale_bbox, descale_bbox)  # symmetric matrix
+        else:
+            raise NotImplementedError
+
+        bbox_iou = torch.where(torch.isnan(bbox_iou), torch.zeros_like(bbox_iou), bbox_iou)
+
+        # get the iou loss weight w.r.t time
+        w_iou = self._extract(self.alphas_cumprod.to(data_t.device), timestep, bbox_iou.shape)
+        # only consider bboxes in the same scenes
+        assert scene_ids is not None
+        scene_ids = torch.tensor(scene_ids, dtype=torch.int64, device=data_t.device)
+        scene_mask = scene_ids[:, None] == scene_ids
+        diag_mask = torch.eye(scene_mask.size(0), dtype=torch.bool, device=scene_mask.device)
+        scene_mask[diag_mask] = False  # remove the diagomal values
+        iou_indices = torch.where(scene_mask)
+        w_iou_selected = w_iou[iou_indices[0]].reshape(-1)
+        if not torch.isnan(bbox_iou[iou_indices]).any():
+            bbox_iou_valid = bbox_iou[iou_indices] + 1e-6
+        else:
+            bbox_iou_valid = torch.zeros(len(w_iou_selected)).to(data_t.device) # meaningful bbox_iou in the same scene.
+            print("bbox_iou is NaN")
+        loss_iou_valid = w_iou_selected * 0.5 * bbox_iou_valid
+        return loss_iou_valid, bbox_iou_valid
 
     def SDFusion_loss(self, data_t, t, denoise_out, target, scene_ids):
         loss_size = torch.nn.functional.mse_loss(target[:, 0:self.size_dim], denoise_out[:, 0:self.size_dim], reduction='none').mean(
@@ -360,10 +434,12 @@ class GaussianDiffusion:
         loss_bbox = torch.nn.functional.mse_loss(target, denoise_out, reduction='none').mean(dim=list(range(1, len(data_t.shape))))
         logvar_t = self.logvar[t].to(data_t.device)
         loss = loss_bbox / torch.exp(logvar_t) + logvar_t
-        loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
-        bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
-        loss = loss.mean()
-        return loss, {
+        if self.loss_iou:
+            loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t,  timestep=t, pred_data=denoise_out, scene_ids=scene_ids)
+        else:
+            loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
+            bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
+        return loss.mean() + loss_iou_valid.mean(), {
             'loss.bbox': loss_bbox.mean(),
             'loss.trans': loss_trans.mean(),
             'loss.size': loss_size.mean(),
@@ -372,7 +448,7 @@ class GaussianDiffusion:
             'loss.bbox_iou': bbox_iou_valid.mean(),
         }
 
-    def diffuscene_loss(self, data_t, t, denoise_out, target, scene_ids):
+    def diffusion_loss(self, data_t, t, denoise_out, target, scene_ids):
         loss_size = ((target[:, 0:self.size_dim] - denoise_out[:, 0:self.size_dim]) ** 2).mean(
             dim=list(range(1, len(data_t.shape))))
         loss_trans = ((target[:, self.size_dim:self.size_dim + self.translation_dim] - denoise_out[:,
@@ -386,39 +462,7 @@ class GaussianDiffusion:
         losses = ((target - denoise_out) ** 2).mean(dim=list(range(1, len(data_t.shape))))
 
         if self.loss_iou:
-            # get x_recon & valid mask
-            if self.model_mean_type == 'eps':
-                self.x_recon = self._predict_xstart_from_eps(data_t, t, eps=denoise_out)
-            else:
-                self.x_recon = denoise_out
-
-            # descale bounding box to world coordinate system
-            descale_bbox = batch_torch_denormalize_box_params(self.x_recon, file=self.bbox_norm_file)
-            if self.iou_type == 'aabb':
-                # get the aabb bbox corners
-                axis_aligned_bbox_corn = torch.cat(
-                    [descale_bbox[:, 3:6] - descale_bbox[:3] / 2, descale_bbox[:, 3:6] + descale_bbox[:3] / 2],
-                    dim=-1)
-                assert axis_aligned_bbox_corn.shape[-1] == 6
-                # TODO implement this
-                bbox_iou = axis_aligned_bbox_overlaps_3d(axis_aligned_bbox_corn, axis_aligned_bbox_corn)
-            elif self.iou_type == 'obb':
-                bbox_iou = bbox_overlaps_3d(descale_bbox, descale_bbox)  # symmetric matrix
-            else:
-                raise NotImplementedError
-
-            # get the iou loss weight w.r.t time
-            w_iou = self._extract(self.alphas_cumprod.to(data_t.device), t, bbox_iou.shape)
-            # only consider bboxes in the same scenes
-            assert scene_ids is not None
-            scene_ids = torch.tensor(scene_ids, dtype=torch.int64, device=data_t.device)
-            scene_mask = scene_ids[:, None] == scene_ids
-            diag_mask = torch.eye(scene_mask.size(0), dtype=torch.bool, device=scene_mask.device)
-            scene_mask[diag_mask] = False  # remove the diagomal values
-            iou_indices = torch.where(scene_mask)
-            w_iou_selected = w_iou[iou_indices[0]].reshape(-1)
-            bbox_iou_valid = bbox_iou[iou_indices] + 1e-6  # meaningful bbox_iou in the same scene.
-            loss_iou_valid = w_iou_selected * 0.5 * bbox_iou_valid
+            loss_iou_valid, bbox_iou_valid = self.IoU_loss(data_t, timestep=t, pred_data=denoise_out,scene_ids=scene_ids)
         else:
             loss_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
             bbox_iou_valid = torch.zeros(len(denoise_out)).to(data_t.device)
@@ -432,7 +476,7 @@ class GaussianDiffusion:
             'loss.bbox_iou': bbox_iou_valid.mean(),
         }
 
-    def p_losses(self, denoise_fn, data_start, t, noise=None, condition=None, condition_cross=None, scene_ids=None):
+    def p_losses(self, denoise_fn, data_start, obj_embed, triples, t, condition_cross=None, scene_ids=None):
         """
         Training loss calculation
         """
@@ -440,9 +484,11 @@ class GaussianDiffusion:
         B, D = data_start.shape
         assert t.shape == torch.Size([B])
 
-        if noise is None:
-            noise = torch.randn(data_start.shape, dtype=data_start.dtype, device=data_start.device)
-        assert noise.shape == data_start.shape and noise.dtype == data_start.dtype
+        # preprocess angle
+        sincos = preprocess_angle2sincos(data_start[:,D-1:D])
+        data_start = torch.concat((data_start[:,:D-1],sincos),dim=-1)
+
+        noise = torch.randn(data_start.shape, dtype=data_start.dtype, device=data_start.device)
 
         data_t = self.q_sample(x_start=data_start, t=t, noise=noise) # diffuse the bbox step by step
 
@@ -453,28 +499,13 @@ class GaussianDiffusion:
         else:
             raise NotImplementedError
         # predict the noise instead of x_start. seems to be weighted naturally like SNR
-        denoise_out = denoise_fn(data_t, t, condition, condition_cross)
+        denoise_out = denoise_fn(data_t, obj_embed, triples, t, condition_cross)
         assert data_t.shape == data_start.shape
         assert denoise_out.shape == data_start.shape
-        if self.loss_type == 'diffuscene':
-            loss, loss_dict = self.diffuscene_loss(data_t, t, denoise_out, target, scene_ids)
-        elif self.loss_type == 'sdfusion':
-            loss, loss_dict = self.SDFusion_loss(data_t, t, denoise_out, target, scene_ids)
-        else:
-            raise NotImplementedError(self.loss_type)
-        return loss, loss_dict
-                   
-    
-    def descale_to_origin(self, x, minimum, maximum):
-        '''
-            x shape : BxNx3
-            minimum, maximum shape: 3
-        '''
-        x = (x + 1) / 2
-        x = x * (maximum - minimum)[None, None, :] + minimum[None, None, :]
-        return x
+        loss, loss_dict = self.diffusion_loss(data_t, t, denoise_out, target, scene_ids)
 
-    '''debug'''
+        return loss, loss_dict
+
 
     def _prior_bpd(self, x_start):
 
@@ -519,7 +550,7 @@ class GaussianDiffusion:
 
 
 class DiffusionPoint(nn.Module):
-    def __init__(self, denoise_net, config, schedule_type='linear', beta_start=0.0001, beta_end=0.02, time_num=1000,
+    def __init__(self, denoise_net, config, conditioning_key=None, schedule_type='linear', beta_start=0.0001, beta_end=0.02, time_num=1000,
             loss_type='mse', model_mean_type='eps', model_var_type ='fixedsmall', loss_separate=False, loss_iou=False, iou_type = 'obb', train_stats_file=None):
           
         super(DiffusionPoint, self).__init__()
@@ -545,32 +576,34 @@ class DiffusionPoint(nn.Module):
         }
 
 
-    def _denoise(self, data, t, condition, condition_cross):
+    def _denoise(self, data, obj_embed, triples, t, condition_cross):
         B, D = data.shape
         assert data.dtype == torch.float
         assert t.shape == torch.Size([B]) and t.dtype == torch.int64
+        # data = data.unsqueeze(1)
+        if self.model.conditioning_key == 'concat':
+            out = self.model(data, obj_embed, triples, t)
+        elif self.model.conditioning_key == 'crossattn':
+            out = self.model(data, obj_embed, triples, t, context=condition_cross)
+        else:
+            raise NotImplementedError
+        # elif self.model.conditioning_key == 'hybrid':
+        #     out = self.model(data, condition, t, context=condition_cross)
+        out = out.squeeze(-1)
 
-        out = self.model(data, t, condition, condition_cross)
-        
         assert out.shape == torch.Size([B, D])
         return out
 
-    def get_loss_iter(self, data, scene_ids=None, noises=None, condition=None, condition_cross=None):
+    def get_loss_iter(self, obj_embed, preds, data, scene_ids=None, condition_cross=None):
         B, _ = data.shape
 
-        if self.diffusion.loss_iou:
-            unique_scenes, inv_idx = np.unique(scene_ids, return_inverse=True)
-            t = torch.randint(0, self.diffusion.num_timesteps, size=unique_scenes.shape, device=data.device) # we want to have different t for each scene not each obj
-            t = t[inv_idx]
-        else:
-            t = torch.randint(0, self.diffusion.num_timesteps, size=(B,), device=data.device)
+        unique_scenes, inv_idx = np.unique(scene_ids, return_inverse=True)
+        t = torch.randint(0, self.diffusion.num_timesteps, size=unique_scenes.shape,
+                          device=data.device)  # we want to have different t for each scene not each obj
+        t = t[inv_idx]
         assert len(t) == B
 
-        if noises is not None:
-            noises[t!=0] = torch.randn((t!=0).sum(), *noises.shape[1:]).to(noises)
-
-        loss, loss_dict = self.diffusion.p_losses(
-            denoise_fn=self._denoise, data_start=data, t=t, noise=noises, condition=condition, condition_cross=condition_cross, scene_ids=scene_ids)
+        loss, loss_dict = self.diffusion.p_losses(self._denoise, data, obj_embed, triples=preds, t=t, condition_cross=condition_cross, scene_ids=scene_ids)
         assert t.shape == torch.Size([B])
         return loss, loss_dict
     
@@ -581,8 +614,19 @@ class DiffusionPoint(nn.Module):
                                             clip_denoised=clip_denoised,
                                             keep_running=keep_running)
 
+    def gen_samples_sg(self, shape, device, obj_embed, triples=None, condition=None, noise_fn=torch.randn,
+                    clip_denoised=True, keep_running=False):
+        return self.diffusion.p_sample_loop_sg(self._denoise, shape=shape, device=device, obj_embed=obj_embed, triples=triples, condition=condition, noise_fn=noise_fn,
+                                            clip_denoised=clip_denoised, keep_running=keep_running)
+
     def gen_sample_traj(self, shape, device, freq, condition=None, condition_cross=None, noise_fn=torch.randn,
                     clip_denoised=True,keep_running=False):
         return self.diffusion.p_sample_loop_trajectory(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn, freq=freq,
+                                                       clip_denoised=clip_denoised,
+                                                       keep_running=keep_running)
+
+    def gen_sample_traj_sg(self, shape, device, freq, condition=None, triples=None, condition_cross=None, noise_fn=torch.randn,
+                    clip_denoised=True,keep_running=False):
+        return self.diffusion.p_sample_loop_trajectory_sg(self._denoise, shape=shape, device=device, condition=condition, triples=triples, condition_cross=condition_cross, noise_fn=noise_fn, freq=freq,
                                                        clip_denoised=clip_denoised,
                                                        keep_running=keep_running)

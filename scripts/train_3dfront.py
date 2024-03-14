@@ -5,7 +5,6 @@ import random
 import numpy as np
 import torch
 import torch.nn.parallel
-import torch.optim as optim
 import torch.utils.data
 import sys
 import time
@@ -14,16 +13,9 @@ from omegaconf import OmegaConf
 sys.path.append('../')
 from dataset.threedfront_dataset import ThreedFrontDatasetSceneGraph
 from model.SGDiff import SGDiff
-from model.discriminators import BoxDiscriminator, ShapeAuxillary
-from model.losses import bce_loss
-from helpers.util import bool_flag, _CustomDataParallel
+from helpers.util import bool_flag
 from helpers.interrupt_handler import InterruptHandler
-
-from model.losses import calculate_model_losses
-
-import torch.nn.functional as F
 import json
-
 from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser()
@@ -50,10 +42,7 @@ parser.add_argument('--large', default=False, type=bool_flag,
 parser.add_argument('--use_scene_rels', type=bool_flag, default=True, help="connect all nodes to a root scene node")
 
 parser.add_argument('--separated', type=bool_flag, default=True, help="if use relation encoder in the diffusion branch")
-parser.add_argument('--with_SDF', type=bool_flag, default=False)  # TODO
-parser.add_argument('--with_feats', type=bool_flag, default=False,
-                    help="if true reads latent point features instead of pointsets."
-                         "If not existing, they get generated at the beginning.")  # TODO
+parser.add_argument('--with_SDF', type=bool_flag, default=False)
 parser.add_argument('--with_CLIP', type=bool_flag, default=True,
                     help="if use CLIP features. Set true for the full version")
 parser.add_argument('--shuffle_objs', type=bool_flag, default=True, help="shuffle objs of a scene")
@@ -68,8 +57,8 @@ parser.add_argument('--with_changes', default=True, type=bool_flag)
 parser.add_argument('--loadmodel', default=False, type=bool_flag)
 parser.add_argument('--loadepoch', default=90, type=int, help='only valid when loadmodel is true')
 parser.add_argument('--replace_latent', default=True, type=bool_flag)
-parser.add_argument('--network_type', default='cs++', choices=['cs++', 'cs++_l'], type=str)
-parser.add_argument('--diff_yaml', default='../config/cs_full_mp.yaml', type=str,
+parser.add_argument('--network_type', default='echoscene', choices=['echoscene', 'echolayout'], type=str)
+parser.add_argument('--diff_yaml', default='../config/full_mp.yaml', type=str,
                     help='config of the diffusion network [cross_attn/concat]')
 
 parser.add_argument('--vis_num', type=int, default=2, help='for visualization in the training')
@@ -83,9 +72,6 @@ def parse_data(data):
                                                                      data['encoder']['tripltes'], \
                                                                      data['encoder']['obj_to_scene'], \
                                                                      data['encoder']['triple_to_scene']
-    if args.with_feats:
-        encoded_enc_f = data['encoder']['feats']
-        encoded_enc_f = encoded_enc_f.cuda()
 
     encoded_enc_text_feat = None
     encoded_enc_rel_feat = None
@@ -120,10 +106,10 @@ def parse_data(data):
 
     enc_scene_nodes = enc_objs == 0
     dec_scene_nodes = dec_objs == 0
-    if not args.with_feats:
-        with torch.no_grad():
-            encoded_enc_f = None  # TODO
-            encoded_dec_f = None  # TODO
+
+    with torch.no_grad():
+        encoded_enc_f = None  # TODO
+        encoded_dec_f = None  # TODO
 
     # set all scene (dummy) node encodings to zero
     try:
@@ -132,7 +118,7 @@ def parse_data(data):
         encoded_dec_f[dec_scene_nodes] = torch.zeros(
             [torch.sum(dec_scene_nodes), encoded_dec_f.shape[1]]).float().cuda()
     except:
-        if args.network_type == 'cs++_box':
+        if args.network_type == 'echolayout':
             encoded_enc_f = None
             encoded_dec_f = None
 
@@ -146,17 +132,10 @@ def parse_data(data):
         raise NotImplementedError
 
     dec_angles = dec_tight_boxes[:, 6]
-    # # limit the angle bin range from 0 to 24
-    # # TODO Is it necessary?
-    # dec_angles = dec_tight_boxes[:, 6].long() - 1
-    # dec_angles = torch.where(dec_angles > 0, dec_angles, torch.zeros_like(dec_angles))
-    # dec_angles = torch.where(dec_angles < 24, dec_angles, torch.zeros_like(dec_angles))
 
     return enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
            enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, \
            encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, changed_triples
-
-
 
 
 def train():
@@ -178,7 +157,6 @@ def train():
         use_SDF=args.with_SDF,
         use_scene_rels=args.use_scene_rels,
         with_changes=args.with_changes,
-        with_feats=args.with_feats,
         with_CLIP=args.with_CLIP,
         large=args.large,
         seed=False,
@@ -261,7 +239,7 @@ def train():
                                                dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
                                                dec_objs_to_scene, missing_nodes, manipulated_triples)
 
-                if args.network_type == 'cs++':
+                if args.network_type == 'echoscene':
                     model.diff.ShapeDiff.update_loss()
 
                 loss = shape_loss + layout_loss
@@ -271,7 +249,7 @@ def train():
 
                 # Cap the occasional super mutant gradient spikes
                 # Do now a gradient step and plot the losses
-                if args.network_type == 'cs++':
+                if args.network_type == 'echoscene':
                     torch.nn.utils.clip_grad_norm_(model.diff.ShapeDiff.df_module.parameters(), 5.0)
                 for group in model.diff.optimizerFULL.param_groups:
                     for p in group['params']:
@@ -288,7 +266,7 @@ def train():
 
                 if counter % 50 == 0:
                     message = "loss at {}: box {:.4f}, shape {:.4f}. Lr:{:.6f}".format( counter, layout_loss, shape_loss, current_lr)
-                    if args.network_type == 'cs++':
+                    if args.network_type == 'echoscene':
                         loss_diff = model.diff.ShapeDiff.get_current_errors()
                         for k, v in loss_diff.items():
                             message += ' %s: %.6f ' % (k, v)

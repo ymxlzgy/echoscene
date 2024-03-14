@@ -80,7 +80,7 @@ def main(argv):
         # ))
     else:
         args.path_to_real_renderings = "/media/ymxlzgy/Data/graphto3d_v2_test/gt_fov90_h8_wo_lamp_no_stool/small/test"
-        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/Instructscene/epoch_00259"
+        args.path_to_synthesized_renderings = "/media/ymxlzgy/Data/model_savedir/Instructscene/epoch_00009"
         # test_real = ThreedFrontRenderDataset(CachedThreedFront(
         #     args.path_to_real_renderings,
         #     config=config,

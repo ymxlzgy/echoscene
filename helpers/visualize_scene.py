@@ -9,7 +9,6 @@ import json
 import torch
 import cv2
 import pyrender
-from render.lineMesh import LineMesh
 import seaborn as sns
 from collections import OrderedDict
 from model.diff_utils.util import tensor2im
@@ -154,95 +153,6 @@ def render_img(trimesh_meshes):
     return color
 
 
-
-def render(predBoxes, predAngles=None, classes=None, classed_idx=None, shapes_pred=None, render_type='points',
-           render_shapes=True, render_boxes=False, colors=None):
-
-    if render_type not in ['meshes', 'points', 'None']:
-        raise ValueError('Render type needs to be either set to meshes or points.')
-
-    if colors is None:
-        colors = np.asarray(json.load(open('graphs/color_palette.json', 'r'))['rgb']) / 255.
-
-    vis = o3d.visualization.Visualizer()
-    vis.create_window()
-
-    ren_opt = vis.get_render_option()
-    ren_opt.mesh_show_back_face = True
-    ren_opt.line_width = 50.
-
-    edges = [0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]
-
-    valid_idx = []
-    all_pcl = []
-    for i in range(len(predBoxes)-1):
-        shape = shapes_pred[i] if shapes_pred != None else None
-        do_render_shape = True if shapes_pred != None else False
-        if render_type == 'points':
-            vertices = shape
-        else:
-            do_render_shape = False
-            if shape is not None:
-                if len(shape) == 2:
-                    vertices, faces = shape
-                    did_fit = True
-                else:
-                    vertices, faces, did_fit = shape
-                do_render_shape = True
-
-        if classes[classed_idx[i]].split('\n')[0] in ["ceiling", "door", "doorframe"]:
-            continue
-
-        if predAngles is None:
-            box_points = params_to_8points_no_rot(predBoxes[i])
-        else:
-            box_and_angle = torch.cat([predBoxes[i].float(), predAngles[i].float()])
-            box_points = params_to_8points(box_and_angle, degrees=True)
-
-        if do_render_shape:
-            if predAngles is None:
-                denorm_shape = fit_shapes_to_box(predBoxes[i], vertices, withangle=False)
-            else:
-                box_and_angle = torch.cat([predBoxes[i].float(), predAngles[i].float()])
-                denorm_shape = fit_shapes_to_box(box_and_angle, vertices)
-
-        valid_idx.append(i)
-        if render_type == 'points':
-            pcd_shape = o3d.geometry.PointCloud()
-            pcd_shape.points = o3d.utility.Vector3dVector(denorm_shape)
-            all_pcl += denorm_shape.tolist()
-            pcd_shape_colors = [colors[i % len(colors)] for _ in range(len(denorm_shape))]
-            pcd_shape.colors = o3d.utility.Vector3dVector(pcd_shape_colors)
-            if render_shapes:
-                vis.add_geometry(pcd_shape)
-        elif render_type == 'meshes':
-            mesh = o3d.geometry.TriangleMesh()
-            mesh.triangles = o3d.utility.Vector3iVector(faces)
-            mesh.vertices = o3d.utility.Vector3dVector(denorm_shape)
-            pcd_shape_colors = [colors[i % len(colors)] for _ in range(len(denorm_shape))]
-            mesh.vertex_colors = o3d.utility.Vector3dVector(pcd_shape_colors)
-
-            if did_fit:
-                mesh = mesh.subdivide_loop(number_of_iterations=1)
-                mesh = mesh.filter_smooth_taubin(number_of_iterations=10)
-            mesh.compute_vertex_normals()
-            if render_shapes:
-                vis.add_geometry(mesh)
-
-        if render_boxes:
-            line_colors = [colors[i % len(colors)] for _ in range(len(edges))]
-            line_mesh = LineMesh(box_points, edges, line_colors, radius=0.02)
-            line_mesh_geoms = line_mesh.cylinder_segments
-
-            for g in line_mesh_geoms:
-                vis.add_geometry(g)
-
-    vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 2]))
-    vis.poll_events()
-    vis.run()
-    vis.destroy_window()
-
-
 def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=None, render_type='txt2shape',
                render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, without_lamp=False,
                str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
@@ -293,27 +203,6 @@ def render_box(scene_id, cats, predBoxes, predAngles, datasize='small', classes=
                 j += 1
             trimesh_meshes = objs_before
 
-        # all_meshes = objs_before
-        # for i in keep:
-        #     obj = trimesh_meshes[i]
-        #     query_label = classes[cats[i]].strip('\n')
-        #     if query_label == '_scene_' or query_label == 'floor' or (query_label == 'lamp' and without_lamp):
-        #         continue
-        #     all_meshes.append(obj)
-        # trimesh_meshes = all_meshes
-
-        # all_meshes = objs_before
-        # i,j = 0, 0
-        # while i < len(keep):
-        #     query_label = classes[cats[i]].strip('\n')
-        #     i += 1
-        #     if query_label == '_scene_' or query_label == 'floor' or (query_label == 'lamp' and without_lamp):
-        #         continue
-        #     if i in keep:
-        #         all_meshes.append(trimesh_meshes[j])
-        #     j +=1
-        # trimesh_meshes = all_meshes
-
     if demo:
         mesh_dir_shifted = mesh_dir.replace('object_meshes', 'object_meshes_shifted')
         os.makedirs(mesh_dir_shifted, exist_ok=True)
@@ -353,8 +242,8 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
            render_shapes=True, store_img=False, render_boxes=False, demo=False, visual=False, epoch=None, no_stool = False, without_lamp=False, str_append="", mani=0, missing_nodes=None, manipulated_nodes=None, objs_before=None, store_path=None):
     os.makedirs(store_path,exist_ok=True)
 
-    if render_type not in ['cs++_mp', 'txt2shape', 'retrieval', 'onlybox']:
-        raise ValueError('Render type needs to be either set to v2 or txt2shape or retrieval or onlybox.')
+    if render_type not in ['echoscene', 'txt2shape', 'retrieval', 'onlybox']:
+        raise ValueError('Render type needs to be either set to echoscene or txt2shape or retrieval or onlybox.')
     color_palette = np.array(sns.color_palette('hls', len(classes)))
     box_and_angle = torch.cat([predBoxes.float(), predAngles.float()], dim=1)
 
@@ -367,7 +256,7 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
 
     mesh_dir = os.path.join(store_path, render_type, 'object_meshes', scene_id[0])
     os.makedirs(mesh_dir, exist_ok=True)
-    if render_type == 'cs++_mp':
+    if render_type == 'echoscene':
         lamp_mesh_list, trimesh_meshes, raw_meshes = get_generated_shapes(box_and_angle, shapes_pred, cats, classes, mesh_dir, render_boxes=render_boxes, colors=color_palette[cats], without_lamp=without_lamp)
 
     elif render_type == 'retrieval':
@@ -424,11 +313,6 @@ def render_full(scene_id, cats, predBoxes, predAngles=None, datasize='small', cl
 
     if visual:
         scene.show()
-
-    # if user_study:
-    #     color_img = render_img(trimesh_meshes)
-    #     color_bgr = cv2.cvtColor(color_img, cv2.COLOR_RGBA2BGR)
-    #     cv2.imwrite(os.path.join(img_path, '{}.png'.format(scene_id[0])), color_bgr)
 
     if store_img and not demo:
         img_path = os.path.join(store_path, "render_imgs", render_type)
