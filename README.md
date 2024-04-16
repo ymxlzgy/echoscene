@@ -1,22 +1,28 @@
-<table style="border-collapse: collapse; border: none;">
+<table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
-    <td style="border: none;">
+    <td style="border: none; vertical-align: middle; padding-right: 20px;">
       <h1>EchoScene</h1>
       <p>This is the implementation of <strong>EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
     </td>
-    <td style="border: none;">
+    <td style="border: none; vertical-align: middle; text-align: right; width: 200px;">
       <img src="./assets/xxx.png" alt="EchoScene Image" width="200"/>
     </td>
   </tr>
 </table>
 
+<div align="center">
+<a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <br> <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
+</div>
+<br>
+<div align="center">
+Techincal University of Munich • Ludwig Maximilian University of Munich • Google
+</div>
 
-Authors:
-[Guangyao Zhai](https://ymxlzgy.com/), [Evin Pınar Örnek](https://evinpinar.github.io/about/), [Dave Zhenyu Chen](https://daveredrum.github.io/), [Ruotong Liao](https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en), [Yan Di](https://shangbuhuan13.github.io/), [Federico Tombari](https://federicotombari.github.io/), [Nassir Navab](https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/), and [Benjamin Busam](https://www.cs.cit.tum.de/camp/members/benjamin-busam/)
+<div align="center">
+Arxiv | <a href="https://sites.google.com/view/echoscene">Website</a>
+</div>
 
-Affiliations: Techincal University of Munich • Ludwig Maximilian University of Munich • Google
 
-Arxiv | [Website](https://sites.google.com/view/echoscene)
 
 ## Setup
 ### Environment
