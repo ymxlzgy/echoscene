@@ -6,7 +6,7 @@
       <p><strong>Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
     </td>
     <!-- 图片单元格宽度固定，始终在右边 -->
-    <td style="border: none; vertical-align: middle; text-align: right; width: 20%;">
+    <td style="border: none; vertical-align: middle; text-align: right; width: 10%;">
       <img src="./assets/xxx.png" alt="EchoScene Image"/>
     </td>
   </tr>
