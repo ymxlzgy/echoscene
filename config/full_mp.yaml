@@ -1,5 +1,5 @@
 hyper:
-    batch_size: 15
+    batch_size: 64
     gpu_ids: 0
     logs_dir: ../full_mp/diff_crossattn
     results_dir: ../full_mp/diff_crossattn

@@ -163,7 +163,6 @@ def validate_constrains_loop_w_changes(modelArgs, testdataset, model, normalized
                 boxes_pred_den = descale_box_params(boxes_pred, file=normalized_file) # min, max
 
             if args.visualize:
-                colors = None
                 # layout and shape visualization through open3d
                 print("rendering", [obj_classes[i].strip('\n') for i in dec_objs])
                 if model.type_ == 'echoscene':
@@ -286,7 +285,6 @@ def validate_constrains_loop(modelArgs, test_dataset, model, epoch=None, normali
 
 
         if args.visualize:
-            colors = None
             classes = sorted(list(set(vocab['object_idx_to_name'])))
             # layout and shape visualization through open3d
             print("rendering", [classes[i].strip('\n') for i in dec_objs])

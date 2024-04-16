@@ -1,13 +1,6 @@
-import json
-
 import torch
 import torch.nn as nn
-
-import pickle
 import os
-import glob
-
-import trimesh
 from termcolor import colored
 
 class SGDiff(nn.Module):
@@ -54,7 +47,6 @@ class SGDiff(nn.Module):
         return obj_selected, shape_loss, layout_loss, loss_dict
 
     def load_networks(self, exp, epoch, strict=True, restart_optim=False, load_shape_branch=True):
-        diff_cfg = self.diff_opt
         ckpt = torch.load(os.path.join(exp, 'checkpoint', 'model{}.pth'.format(epoch)))
         diff_state_dict = {}
         diff_state_dict['opt'] = ckpt.pop('opt')
@@ -64,18 +56,12 @@ class SGDiff(nn.Module):
                 diff_state_dict['shape_df'] = ckpt.pop('shape_df')
                 self.diff.ShapeDiff.vqvae.load_state_dict(diff_state_dict['vqvae'])
                 self.diff.ShapeDiff.df.load_state_dict(diff_state_dict['shape_df'])
-                # for multi-gpu (deprecated)
-                if diff_cfg.hyper.distributed:
-                    self.diff.ShapeDiff.make_distributed(diff_cfg)
-                    self.diff.ShapeDiff.df_module = self.diff.ShapeDiff.df.module
-                    self.diff.ShapeDiff.vqvae_module = self.diff.ShapeDiff.vqvae.module
-                else:
-                    self.diff.ShapeDiff.df_module = self.diff.ShapeDiff.df
-                    self.diff.ShapeDiff.vqvae_module = self.diff.ShapeDiff.vqvae
-                    print(colored(
-                        '[*] shape branch has successfully been restored from: %s' % os.path.join(exp, 'checkpoint',
-                                                                                                  'model{}.pth'.format(
-                                                                                                      epoch)), 'blue'))
+                self.diff.ShapeDiff.df_module = self.diff.ShapeDiff.df
+                self.diff.ShapeDiff.vqvae_module = self.diff.ShapeDiff.vqvae
+                print(colored(
+                    '[*] shape branch has successfully been restored from: %s' % os.path.join(exp, 'checkpoint',
+                                                                                              'model{}.pth'.format(
+                                                                                                  epoch)), 'blue'))
             except:
                 print('no vqvae or shape_df recorded. Assume it is only the layout branch')
         try:

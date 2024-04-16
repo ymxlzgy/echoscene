@@ -12,10 +12,6 @@ from omegaconf import OmegaConf
 
 
 class Sg2ScDiffModel(nn.Module):
-    """
-    VAE-based network for scene generation and manipulation from a scene graph.
-    It has a separate embedding of shape and bounding box latents.
-    """
     def __init__(self, vocab, diff_opt, diffusion_bs=8, embedding_dim=128, batch_size=32,
                  gconv_pooling='avg', gconv_num_layers=5,
                  mlp_normalization='none',
@@ -142,7 +138,6 @@ class Sg2ScDiffModel(nn.Module):
     def update_learning_rate(self):
         self.scheduler.step()
         lr = self.optimizers[0].param_groups[0]['lr']
-        # print('[*] learning rate = %.7f' % lr)
         return lr
 
     def init_encoder(self, objs, triples, enc_text_feat, enc_rel_feat):

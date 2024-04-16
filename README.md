@@ -1,9 +1,22 @@
-# EchoScene
+<table style="border-collapse: collapse; border: none;">
+  <tr>
+    <td style="border: none;">
+      <h1>EchoScene</h1>
+      <p>This is the implementation of <strong>EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
+    </td>
+    <td style="border: none;">
+      <img src="./assets/xxx.png" alt="EchoScene Image" width="200"/>
+    </td>
+  </tr>
+</table>
 
-This is the implementation of the submission **EchoScene: Indoor Scene Generation via Echo Diffusion on Scene Graphs**. 
 
-**Notification:** This is a confidential code repository. Do not distribute.
+Authors:
+[Guangyao Zhai](https://ymxlzgy.com/), [Evin Pınar Örnek](https://evinpinar.github.io/about/), [Dave Zhenyu Chen](https://daveredrum.github.io/), [Ruotong Liao](https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en), [Yan Di](https://shangbuhuan13.github.io/), [Federico Tombari](https://federicotombari.github.io/), [Nassir Navab](https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/), and [Benjamin Busam](https://www.cs.cit.tum.de/camp/members/benjamin-busam/)
 
+Affiliations: Techincal University of Munich • Ludwig Maximilian University of Munich • Google
+
+Arxiv | [Website](https://sites.google.com/view/echoscene)
 
 ## Setup
 ### Environment
@@ -16,7 +29,7 @@ pip install -r requirements.txt
 pip install einops omegaconf tensorboardx open3d
 ```
 
-Install mmcv-det3d:
+Install mmcv-det3d (optional):
 
 ```javascript
 mim install mmengine
@@ -31,15 +44,36 @@ Install CLIP:
 pip install ftfy regex tqdm
 pip install git+https://github.com/openai/CLIP.git
 ```
-Setup additional Chamfer Distance calculation for evaluation:
-```javascript
-cd ./extension
-python setup.py install
-```
 ### Dataset
-Please follow CommonScenes to prepare the data.
+
+I. Download [3D-FUTURE-SDF](https://www.campar.in.tum.de/public_datasets/2023_commonscenes_zhai/3D-FUTURE-SDF.zip). This is processed by ourselves on the 3D-FUTURE meshes using tools in [SDFusion](https://github.com/yccyenchicheng/SDFusion).
+
+II. Follow [this page](./SG-FRONT.md) for downloading SG-FRONT dataset and accessing more information.
+
+III. Optional
+1. Download the <a href="https://tianchi.aliyun.com/specials/promotion/alibaba-3d-scene-dataset">3D-FRONT dataset</a> from their official site.
+
+2. Preprocess the dataset following  <a href="https://github.com/nv-tlabs/ATISS#data-preprocessing">ATISS</a>.
+
+IV. Create a folder named `FRONT`, and copy all files to it.
+
+The structure should be similar like this:
+```
+FRONT
+|--3D-FUTURE-SDF
+|--All SG-FRONT files (.json and .txt)
+|--3D-FRONT (optional)
+|--3D-FRONT-texture (optional)
+|--3D-FUTURE-model (optional)
+|--3D-FUTURE-scene (optional)
+|--3D-FRONT_preprocessed (optional, by ATISS)
+|--threed_front.pkl (optional, by ATISS)
+```
 ### Models
-Please follow CommonScenes to download the VQ-VAE model.
+**Essential:** Download pretrained VQ-VAE model from [here](https://www.campar.in.tum.de/public_datasets/2023_commonscenes_zhai/vqvae_threedfront_best.pth) to the folder `scripts/checkpoint`.
+
+**Optional:** We provide two trained models: EchoLayout available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_layout_model.zip) and EchoScene available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_full_model.zip).
+
 ## Training
 
 To train the models, run:
@@ -48,9 +82,11 @@ To train the models, run:
 cd scripts
 python train_3dfront.py --exp /path/to/exp_folder --room_type all --dataset /path/to/dataset --residual True --network_type echoscene --with_SDF True --with_CLIP True --batchSize 64 --workers 8 --loadmodel False --nepoch 10000 --large False --use_scene_rels True
 ```
-`--room_type`: rooms to train, e.g., livingroom, diningroom, bedroom, and all. We train all rooms together in the implementation.
+`--exp`: the path where trained models and logs would like to be stored.
 
-`--network_type`: the network to be trained. `echoscene` is EchoScene, `echolayout` is EchoLayout (single branch).
+`--room_type`: rooms to train, e.g., 'livingroom', 'diningroom', 'bedroom', and 'all'. We train all rooms together in the implementation.
+
+`--network_type`: the network to be trained. `echoscene` is EchoScene, `echolayout` is EchoLayout (retrieval method, single layout generation branch).
 
 `--with_SDF`: set to `True` if train EchoScene.
 
@@ -65,19 +101,20 @@ To evaluate the models run:
 cd scripts
 python eval_3dfront.py --exp /path/to/trained_model --dataset /path/to/dataset --epoch 2050 --visualize True --num_samples 1 --room_type all --render_type echoscene --gen_shape True
 ```
-`--exp`: where you store the models.
+`--exp`: where the models are stored. If one wants to load our provided models, the path should be aligned with 
 
-`--gen_shape`: set `True` if you want to make shape branch work.
+`--gen_shape`: set `True` if one wants to make shape branch work.
 
 ### FID/KID
-This metric aims to evaluate scene-level fidelity. To evaluate FID/KID, you need to collect ground truth top-down renderings by running `collect_gt_sdf_images.py`.
+This metric aims to evaluate scene-level fidelity. To evaluate FID/KID, you need to collect ground truth top-down renderings by modifying and running `collect_gt_sdf_images.py`.
 
 Make sure you download all the files and preprocess the 3D-FRONT. The renderings of generated scenes can be obtained inside `eval_3dfront.py`.
 
 After obtaining both ground truth images and generated scenes renderings, run `compute_fid_scores_3dfront.py`.
 ### MMD/COV/1-NN
-This metric aims to evaluate object-level fidelity. To evaluate this, you need to store object by object in the generated scenes, which can be done in `eval_3dfront.py`. 
+This metric aims to evaluate object-level fidelity. To evaluate this, you need to first obtain ground truth object meshes from [here](https://www.campar.in.tum.de/public_datasets/2023_commonscenes_zhai/gt_fov90_h8_obj_meshes.zip) (~5G). 
 
+Secondly, store per generated object in the generated scenes, which can be done in `eval_3dfront.py`.
 After obtaining object meshes, modify the path in `compute_mmd_cov_1nn.py` and run it to have the results.
 ## Acknowledgements
-**Re-emphasize:** This is a confidential code repository. Do not distribute.
+**Disclaimer:** This is a code repository for reference only; in case of any discrepancies, the paper shall prevail. 

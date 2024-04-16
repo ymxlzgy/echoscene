@@ -135,17 +135,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
 
         points_classes = list(self.classes.keys())
         points_classes.remove('_scene_')
-
-        # points_classes = ['armchair', 'bookshelf', 'cabinet', 'ceiling_lamp', 'chair', 'chaise_longue_sofa', 'children_cabinet', 'chinese_chair',
-        #                       'coffee_table', 'console_table', 'corner_side_table', 'desk', 'dining_chair', 'dining_table', 'double_bed', 'dressing_chair',
-        #                       'dressing_table', 'kids_bed', 'l_shaped_sofa', 'lazy_sofa', 'lounge_chair', 'loveseat_sofa', 'multi_seat_sofa', 'nightstand', 'pendant_lamp',
-        #                       'round_end_table', 'shelf', 'single_bed', 'sofa', 'stool', 'table', 'tv_stand', 'wardrobe', 'wine_cabinet']
-
-        # Why we do this here? It is because that we want to make each category evenly sampled during the diffusion
-        # training. You can see the objects are classified/mapped into coarse categories, which will cause the number
-        # of objects in each category are very different from each other. For example, Chairs are the most and lamps
-        # are the fewest among all the objects. So when we sample a batch in more fine-grained classes, the problem
-        # can be alleviated.
         self.vocab['object_idx_to_name_grained'] = self.vocab['object_idx_to_name']
 
         if not self.large:
@@ -238,12 +227,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                 relationships.append(relationship)
         return relationships
 
-    def norm_points(self, p):
-        centroid = np.mean(p, axis=0)
-        m = np.max(np.sqrt(np.sum(p ** 2, axis=1)))
-        p = (p - centroid) / float(m)
-        return p
-
     def get_key(self, dict, value):
         for k, v in dict.items():
             if v == value:
@@ -333,7 +316,6 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
                     sdf = torch.Tensor(obj_sdf).view(1, self.sdf_res, self.sdf_res, self.sdf_res)
                     sdf = torch.clamp(sdf, min=-0.2, max=0.2)
                     obj_sdf_list.append(sdf)
-
             else:
                 obj_sdf_list = None
 

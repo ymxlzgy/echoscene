@@ -7,10 +7,6 @@ import numpy as np
 from helpers.lr_scheduler import *
 
 class Sg2BoxDiffModel(nn.Module):
-    """
-    VAE-based network for scene generation and manipulation from a scene graph.
-    It has a separate embedding of shape and bounding box latents.
-    """
     def __init__(self, vocab, diff_opt, diffusion_bs=8, embedding_dim=128, batch_size=32,
                  gconv_pooling='avg', gconv_num_layers=5,
                  mlp_normalization='none',
@@ -304,7 +300,6 @@ class Sg2BoxDiffModel(nn.Module):
             latent_obj_vecs_, pred_vecs_, obj_embed_, pred_embed_ = self.manipulate(latent_obj_vecs_, dec_objs, dec_triplets, encoded_dec_text_feat, encoded_dec_rel_feat) # normal message passing
 
             # relation embeddings -> diffusion
-
             box_diff_dict = self.prepare_input(dec_triplets, obj_embed_, relation_cond=latent_obj_vecs_)
 
             self.LayoutDiff.set_input(box_diff_dict)
@@ -341,7 +336,6 @@ class Sg2BoxDiffModel(nn.Module):
                 latent_obj_vecs = latent_obj_vecs_
 
             # relation embeddings -> diffusion
-
             box_diff_dict = self.prepare_input(dec_triples, obj_embed_, relation_cond=latent_obj_vecs)
             self.LayoutDiff.set_input(box_diff_dict)
             layout_dict = self.LayoutDiff.generate_layout_sg(box_dim=self.diff_cfg.layout_branch.denoiser_kwargs.in_channels)

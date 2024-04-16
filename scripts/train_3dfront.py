@@ -99,6 +99,7 @@ def parse_data(data):
     # changed nodes
     missing_nodes = data['missing_nodes']
     changed_triples = (data['manipulated_subs'], data['manipulated_preds'], data['manipulated_objs']) # this is the real triple
+    manipulated_nodes = data['manipulated_subs'] + data['manipulated_objs']
 
     enc_objs, enc_triples = enc_objs.cuda(), enc_triples.cuda()
     dec_objs, dec_triples, dec_tight_boxes = dec_objs.cuda(), dec_triples.cuda(), dec_tight_boxes.cuda()
@@ -135,13 +136,13 @@ def parse_data(data):
 
     return enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
            enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, \
-           encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, changed_triples
+           encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_nodes
 
 
 def train():
     """ Train the network based on the provided argparse parameters
     """
-    args.manualSeed = random.randint(1, 10000)  # optionally fix seed 7494
+    args.manualSeed = random.randint(1, 10000)
     print("Random Seed: ", args.manualSeed)
 
     print(torch.__version__)
@@ -221,7 +222,7 @@ def train():
                 try:
                     enc_objs, enc_triples, encoded_enc_f, encoded_enc_text_feat, encoded_enc_rel_feat,\
                     enc_objs_to_scene, dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs,\
-                    encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_triples = parse_data(data)
+                    encoded_dec_f, encoded_dec_text_feat, encoded_dec_rel_feat, dec_objs_to_scene, dec_triples_to_scene, missing_nodes, manipulated_nodes = parse_data(data)
                 except Exception as e:
                     print('Exception', str(e))
                     continue
@@ -237,7 +238,7 @@ def train():
 
                 obj_selected, shape_loss, layout_loss, loss_dict = model.forward_mani(enc_objs, enc_triples, encoded_enc_text_feat, encoded_enc_rel_feat,
                                                dec_objs, dec_objs_grained, dec_triples, dec_boxes, dec_angles, dec_sdfs, encoded_dec_text_feat, encoded_dec_rel_feat,
-                                               dec_objs_to_scene, missing_nodes, manipulated_triples)
+                                               dec_objs_to_scene, missing_nodes, manipulated_nodes)
 
                 if args.network_type == 'echoscene':
                     model.diff.ShapeDiff.update_loss()
