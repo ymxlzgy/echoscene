@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</h1>
+<h1><img src="./assets/signal.png" alt="Logo" width="40" height="30"> EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</h1>
 </div>
 <br>
 <div align="center">
@@ -7,7 +7,7 @@
 </div>
 <br>
 <div align="center">
-  Technical University of Munich <span style="margin: 0 15px;">•</span> Ludwig Maximilian University of Munich <span style="margin: 0 15px;">•</span> Google
+  Technical University of Munich <span style="margin: 0 10px;">•</span> Ludwig Maximilian University of Munich <span style="margin: 0 10px;">•</span> Google
 </div>
 
 <br>
