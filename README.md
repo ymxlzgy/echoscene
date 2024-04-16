@@ -1,6 +1,5 @@
 <div align="center">
-  <h1>EchoScene</h1>
-  <h3>Indoor Scene Generation via Information Echo over Scene Graph Diffusion</h3>
+  <h1>EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</h1>
 </div>
 <br>
 <div align="center">
