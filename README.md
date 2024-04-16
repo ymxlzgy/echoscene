@@ -120,6 +120,8 @@ This metric aims to evaluate object-level fidelity. To evaluate this, you need t
 Secondly, store per generated object in the generated scenes, which can be done in `eval_3dfront.py`.
 After obtaining object meshes, modify the path in `compute_mmd_cov_1nn.py` and run it to have the results.
 ## Acknowledgements 
-We thank [DiffuScene's](https://github.com/tangjiapeng/DiffuScene) author Jiapeng Tang and [InstructScene's](https://github.com/chenguolin/InstructScene) author Chenguo Lin for providing the code and helpful discussions.
+**Relevant work:** [Graph-to-3D](https://github.com/he-dhamo/graphto3d), [CommonScenes](https://github.com/ymxlzgy/commonscenes), [DiffuScene](https://github.com/tangjiapeng/DiffuScene), [InstructScene](https://github.com/chenguolin/InstructScene), [SceneTex](https://github.com/daveredrum/SceneTex).
 
 **Disclaimer:** This is a code repository for reference only; in case of any discrepancies, the paper shall prevail. 
+
+We additionally thank DiffuScene's author Jiapeng Tang and InstructScene's author Chenguo Lin for providing the code and helpful discussions.
