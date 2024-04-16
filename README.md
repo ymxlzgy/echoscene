@@ -7,7 +7,7 @@
 </div>
 <br>
 <div align="center">
-  Technical University of Munich <span style="margin: 0 10px;">•</span> Ludwig Maximilian University of Munich <span style="margin: 0 10px;">•</span> Google
+  Technical University of Munich <span style="margin: 0 15px;">•</span> Ludwig Maximilian University of Munich <span style="margin: 0 15px;">•</span> Google
 </div>
 
 <br>
