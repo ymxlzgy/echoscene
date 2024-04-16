@@ -3,7 +3,7 @@
 </div>
 <br>
 <div align="center">
-  <a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
+  <a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <br> <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
 </div>
 <br>
 <div align="center">
@@ -119,5 +119,7 @@ This metric aims to evaluate object-level fidelity. To evaluate this, you need t
 
 Secondly, store per generated object in the generated scenes, which can be done in `eval_3dfront.py`.
 After obtaining object meshes, modify the path in `compute_mmd_cov_1nn.py` and run it to have the results.
-## Acknowledgements
+## Acknowledgements 
+We thank [DiffuScene's](https://github.com/tangjiapeng/DiffuScene) author Jiapeng Tang and [InstructScene's](https://github.com/chenguolin/InstructScene) author Chenguo Lin for providing the code and helpful discussions.
+
 **Disclaimer:** This is a code repository for reference only; in case of any discrepancies, the paper shall prevail. 
