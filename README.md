@@ -10,7 +10,9 @@
 </div>
 <br>
 <div align="center">
+<h3>
   Arxiv | <a href="https://sites.google.com/view/echoscene">Website</a>
+</h3>
 </div>
 <br>
 <div align="center">
