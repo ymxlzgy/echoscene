@@ -1,17 +1,20 @@
 <table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
-    <td style="border: none; vertical-align: middle; padding-right: 20px;">
+    <!-- 文本单元格占据大部分空间，宽度自适应 -->
+    <td style="border: none; vertical-align: middle; padding-right: 20px; width: 80%;">
       <h1>EchoScene</h1>
-      <p>This is the implementation of <strong>EchoScene: Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
+      <p><strong>Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
     </td>
-    <td style="border: none; vertical-align: middle; text-align: right; width: 200px;">
-      <img src="./assets/xxx.png" alt="EchoScene Image" width="200"/>
+    <!-- 图片单元格宽度固定，始终在右边 -->
+    <td style="border: none; vertical-align: middle; text-align: right; width: 20%;">
+      <img src="./assets/xxx.png" alt="EchoScene Image"/>
     </td>
   </tr>
 </table>
 
+
 <div align="center">
-<a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <br> <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
+<a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
 </div>
 <br>
 <div align="center">
