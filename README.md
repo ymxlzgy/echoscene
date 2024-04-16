@@ -1,30 +1,22 @@
-<table style="width: 100%; border-collapse: collapse; border: none;">
-  <tr>
-    <!-- 文本单元格占据大部分空间，宽度自适应 -->
-    <td style="border: none; vertical-align: middle; padding-right: 20px; width: 80%;">
-      <h1>EchoScene</h1>
-      <p><strong>Indoor Scene Generation via Information Echo over Scene Graph Diffusion</strong>.</p>
-    </td>
-    <!-- 图片单元格宽度固定，始终在右边 -->
-    <td style="border: none; vertical-align: middle; text-align: right; width: 10%;">
-      <img src="./assets/xxx.png" alt="EchoScene Image"/>
-    </td>
-  </tr>
-</table>
-
-
 <div align="center">
-<a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
+  <h1>EchoScene</h1>
+  <h3>Indoor Scene Generation via Information Echo over Scene Graph Diffusion</h3>
 </div>
 <br>
 <div align="center">
-Techincal University of Munich • Ludwig Maximilian University of Munich • Google
+  <a href="https://ymxlzgy.com/">Guangyao Zhai</a>, <a href="https://evinpinar.github.io/about/">Evin Pınar Örnek</a>, <a href="https://daveredrum.github.io/">Dave Zhenyu Chen</a>, <a href="https://scholar.google.com/citations?user=XFQv_oYAAAAJ&hl=en">Ruotong Liao</a>, <a href="https://shangbuhuan13.github.io/">Yan Di</a>, <a href="https://federicotombari.github.io/">Federico Tombari</a>, <a href="https://www.cs.cit.tum.de/camp/members/cv-nassir-navab/nassir-navab/">Nassir Navab</a>, and <a href="https://www.cs.cit.tum.de/camp/members/benjamin-busam/">Benjamin Busam</a>
 </div>
-
 <div align="center">
-Arxiv | <a href="https://sites.google.com/view/echoscene">Website</a>
+  Techincal University of Munich • Ludwig Maximilian University of Munich • Google
 </div>
-
+<br>
+<div align="center">
+  Arxiv | <a href="https://sites.google.com/view/echoscene">Website</a>
+</div>
+<br>
+<div align="center">
+  <img src="./assets/111.gif" alt="teaser" style="max-width: 100%;">
+</div>
 
 
 ## Setup
