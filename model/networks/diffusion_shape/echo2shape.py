@@ -349,7 +349,7 @@ class EchoToShape(BaseModel):
             z = self.vqvae(self.x, forward_no_quant=True, encode_only=True)
 
         # 2. do diffusion's forward
-        # TODO optimize the strategy
+        # TODO optimize the strategy. when the model reaches 2000 epoch, uncomment the lines below and finetune the model using the same timestep.
         # if True:
         #     unique_scenes, inv_idx = np.unique(self.scene_ids, return_inverse=True)
         #     t = torch.randint(0, self.num_timesteps, size=(len(unique_scenes),),
@@ -498,7 +498,7 @@ class EchoToShape(BaseModel):
         B = c_rel.shape[0]
         shape = self.z_shape
 
-        demo_ = 1
+        demo_ = 0
         torch.manual_seed(int(time.time()))
         if demo_:
             seed_value = int(1683052537)

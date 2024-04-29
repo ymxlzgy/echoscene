@@ -52,7 +52,7 @@ pip install git+https://github.com/openai/CLIP.git
 
 I. Download [3D-FUTURE-SDF](https://www.campar.in.tum.de/public_datasets/2023_commonscenes_zhai/3D-FUTURE-SDF.zip). This is processed by ourselves on the 3D-FUTURE meshes using tools in [SDFusion](https://github.com/yccyenchicheng/SDFusion).
 
-II. Follow [this page](./SG-FRONT.md) for downloading SG-FRONT dataset and accessing more information.
+II. Follow [this page](https://sites.google.com/view/commonscenes/dataset) for downloading SG-FRONT dataset and accessing more information.
 
 III. Optional
 1. Download the <a href="https://tianchi.aliyun.com/specials/promotion/alibaba-3d-scene-dataset">3D-FRONT dataset</a> from their official site.
@@ -76,7 +76,7 @@ FRONT
 ### Models
 **Essential:** Download pretrained VQ-VAE model from [here](https://www.campar.in.tum.de/public_datasets/2023_commonscenes_zhai/vqvae_threedfront_best.pth) to the folder `scripts/checkpoint`.
 
-**Optional:** We provide two trained models: EchoLayout available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_layout_model.zip) and EchoScene available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_full_model.zip).
+**Optional:** We provide two trained models: `EchoLayout` available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_layout_model.zip) and `EchoScene` available [here](https://www.campar.in.tum.de/public_datasets/2024_echoscene/released_full_model.zip).
 
 ## Training
 
@@ -125,4 +125,4 @@ After obtaining object meshes, modify the path in `compute_mmd_cov_1nn.py` and r
 
 **Disclaimer:** This is a code repository for reference only; in case of any discrepancies, the paper shall prevail. 
 
-We additionally thank DiffuScene's author Jiapeng Tang and InstructScene's author Chenguo Lin for providing the code and helpful discussions.
+We thank DiffuScene's author [Jiapeng Tang](https://tangjiapeng.github.io/) and InstructScene's author [Chenguo Lin](https://chenguolin.github.io/) for providing the code and helpful discussions, and additionally thank [Mahdi Saleh](https://mahdi-slh.github.io/) for titling the paper as `EchoScene`, which is vivid and catchy :)

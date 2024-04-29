@@ -12,7 +12,7 @@ import json
 import torch.nn.functional as F
 from einops import rearrange, reduce
 from helpers.util import preprocess_angle2sincos,descale_box_params,postprocess_sincos2arctan
-from helpers.threedfront_box3d import bbox_overlaps_3d, axis_aligned_bbox_overlaps_3d
+# from helpers.threedfront_box3d import bbox_overlaps_3d, axis_aligned_bbox_overlaps_3d
 
 def norm(v, f):
     v = (v - v.min())/(v.max() - v.min()) - 0.5
