@@ -24,11 +24,14 @@
 
 ## Setup
 ### Environment
-We have tested it on Ubuntu 20.04 with Python 3.8, PyTorch 1.11.0, CUDA 11.3 and Pytorch3D.
 
 ```javascript
 conda create -n echoscene python=3.8
 conda activate echoscene
+```
+We have tested it on Ubuntu 20.04 with PyTorch 1.11.0, CUDA 11.3 and Pytorch3D.
+
+```javascript
 pip install -r requirements.txt 
 pip install einops omegaconf tensorboardx open3d
 ```
