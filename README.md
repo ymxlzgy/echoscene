@@ -35,6 +35,7 @@ We have tested it on Ubuntu 20.04 with PyTorch 1.11.0, CUDA 11.3 and Pytorch3D.
 pip install -r requirements.txt 
 pip install einops omegaconf tensorboardx open3d
 ```
+(Note: if one encounters a problem with PyYAML, please refer to [this link](https://stackoverflow.com/questions/49911550/how-to-upgrade-disutils-package-pyyaml).)
 
 Install mmcv-det3d (optional):
 

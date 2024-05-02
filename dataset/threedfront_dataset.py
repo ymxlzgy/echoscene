@@ -158,8 +158,8 @@ class ThreedFrontDatasetSceneGraph(data.Dataset):
             self.cond_model_cpu, preprocess_cpu = clip.load("ViT-B/32", device='cpu')
             print('loading CLIP')
             print('Checking for missing clip feats. This can be slow the first time.')
-            # for index in tqdm(range(len(self))):
-            #     self.__getitem__(index)
+            for index in tqdm(range(len(self))):
+                self.__getitem__(index)
             self.recompute_clip = False
 
     def read_relationship_json(self, json_file, box_json_file):
