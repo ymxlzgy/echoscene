@@ -13,7 +13,7 @@
 <br>
 <div align="center">
 <h3>
-  Arxiv | <a href="https://sites.google.com/view/echoscene">Website</a>
+  <a href="https://arxiv.org/abs/2405.00915">Arxiv</a> | <a href="https://sites.google.com/view/echoscene">Website</a>
 </h3>
 </div>
 <br>
@@ -107,7 +107,7 @@ python train_3dfront.py --exp /path/to/exp_folder --room_type all --dataset /pat
 To evaluate the models run:
 ```
 cd scripts
-python eval_3dfront.py --exp /path/to/trained_model --dataset /path/to/dataset --epoch 2050 --visualize True --num_samples 1 --room_type all --render_type echoscene --gen_shape True
+python eval_3dfront.py --exp /path/to/trained_model --dataset /path/to/dataset --epoch 2050 --visualize True --room_type all --render_type echoscene --gen_shape True
 ```
 `--exp`: where the models are stored. If one wants to load our provided models, the path should be aligned with 
 
